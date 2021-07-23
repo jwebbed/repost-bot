@@ -1,9 +1,20 @@
 [package]
 name = "repost-bot"
 version = "0.1.0"
+authors = ["Jonathan Webb <jonathan@webb.nyc>"]
 edition = "2018"
+license = "GPL-3.0-or-later"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+
+[dependencies]
+serenity = { version = "0.10", default-features = false, features = ["client", "gateway", "rustls_backend", "model", "cache"] }
+tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
+linkify = "0.7.0"
 
 [dependencies.rusqlite]
 version = "0.25.1"
