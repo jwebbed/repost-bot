@@ -84,7 +84,7 @@ impl EventHandler for Handler {
             let link = self.get_link(msg.content);
             if link.is_some() {
                 let unwrapped = link.unwrap();
-                let ret = match db.query_links((*unwrapped).to_string()) {
+                let ret = match db.query_links((*unwrapped).to_string(), server_id) {
                     Ok(reposts) => {
                         println!("Found {} reposts: {:?}", reposts.len(), reposts);
                         reposts.len() > 0

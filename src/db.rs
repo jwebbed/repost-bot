@@ -177,15 +177,15 @@ impl DB {
         }
     }
 
-    pub fn query_links(&self, link: String) -> Result<Vec<Link>> {
+    pub fn query_links(&self, link: String, server: u64) -> Result<Vec<Link>> {
         let mut stmt = self.conn.prepare_cached(
             "SELECT L.id, L.link, L.server, L.channel, L.message, C.name, S.name
             FROM link AS L 
             JOIN channel AS C ON L.channel=C.id
             JOIN server AS S ON L.server=S.id
-            WHERE L.link = (?1)",
+            WHERE L.link = (?1) AND L.server = (?2)",
         )?;
-        let rows = stmt.query_map([link], |row| {
+        let rows = stmt.query_map(params![link, server], |row| {
             Ok(Link {
                 id: row.get(0)?,
                 link: row.get(1)?,
