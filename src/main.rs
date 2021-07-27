@@ -30,7 +30,7 @@ async fn main() {
     // Configure the client with your Discord bot token in the environment.
     let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
 
-    // get and migrate the db
+    // migrate the db
     migrate_db();
 
     // Create a new instance of the Client, logging in as a bot. This will

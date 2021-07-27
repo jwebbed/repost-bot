@@ -3,6 +3,7 @@ use rusqlite::Result;
 
 use serenity::{
     async_trait,
+    model::id::{ChannelId, GuildId, MessageId},
     model::{channel::Message, channel::MessageType, gateway::Ready, guild::GuildStatus},
     prelude::*,
 };
@@ -27,6 +28,10 @@ impl Handler {
             .links(msg)
             .map(|x| x.as_str().to_string())
             .collect()
+    }
+
+    fn get_link_str(link: &Link) -> String {
+        MessageId(link.message).link(ChannelId(link.channel), Some(GuildId(link.server)))
     }
 }
 
@@ -81,32 +86,47 @@ impl EventHandler for Handler {
         );
 
         if msg.kind == MessageType::Regular {
-            let mut repost = false;
+            let mut reposts = Vec::new();
             for link in self.get_links(&msg.content) {
-                repost |= match db.query_links(&link, server_id) {
-                    Ok(reposts) => {
-                        println!("Found {} reposts: {:?}", reposts.len(), reposts);
-                        reposts.len() > 0
+                match db.query_links(&link, server_id) {
+                    Ok(results) => {
+                        println!("Found {} reposts: {:?}", results.len(), results);
+                        for result in results {
+                            reposts.push(result);
+                        }
                     }
                     Err(why) => {
                         println!("Failed to load reposts with err: {:?}", why);
-                        false
                     }
                 };
 
-                let l = Link {
-                    link: link,
-                    server: server_id,
-                    channel: *msg.channel_id.as_u64(),
-                    message: *msg.id.as_u64(),
-                    ..Default::default()
-                };
-
-                log_error(db.insert_link(l), "Insert link".to_string());
+                log_error(
+                    db.insert_link(Link {
+                        link: link,
+                        server: server_id,
+                        channel: *msg.channel_id.as_u64(),
+                        message: *msg.id.as_u64(),
+                        ..Default::default()
+                    }),
+                    "Insert link".to_string(),
+                );
             }
 
-            if repost {
-                match msg.reply(&ctx.http, "REPOST").await {
+            if reposts.len() > 0 {
+                let repost_str = if reposts.len() > 1 {
+                    format!(
+                        "\n{}",
+                        reposts
+                            .into_iter()
+                            .map(|x| Handler::get_link_str(&x))
+                            .collect::<Vec<String>>()
+                            .join("\n")
+                    )
+                } else {
+                    Handler::get_link_str(&reposts[0])
+                };
+
+                match msg.reply(&ctx.http, format!("REPOST {}", repost_str)).await {
                     Ok(_) => (),
                     Err(why) => println!("Failed to inform of REPOST: {:?}", why),
                 }
