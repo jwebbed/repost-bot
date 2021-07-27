@@ -11,22 +11,22 @@ use crate::db::get_db;
 use crate::structs::Link;
 
 pub struct Handler {
-    pub finder: LinkFinder,
+    finder: LinkFinder,
 }
 
 impl Handler {
-    fn get_link(&self, msg: String) -> Option<String> {
-        let links: Vec<_> = self
-            .finder
-            .links(&msg)
-            .filter(|link| *link.kind() == LinkKind::Url)
-            .collect();
+    pub fn new() -> Handler {
+        let mut finder = LinkFinder::new();
+        finder.kinds(&[LinkKind::Url]);
 
-        if links.len() == 1 {
-            Some(links[0].as_str().to_string())
-        } else {
-            None
-        }
+        Handler { finder }
+    }
+
+    fn get_links(&self, msg: &str) -> Vec<String> {
+        self.finder
+            .links(msg)
+            .map(|x| x.as_str().to_string())
+            .collect()
     }
 }
 
@@ -81,10 +81,9 @@ impl EventHandler for Handler {
         );
 
         if msg.kind == MessageType::Regular {
-            let link = self.get_link(msg.content);
-            if link.is_some() {
-                let unwrapped = link.unwrap();
-                let ret = match db.query_links((*unwrapped).to_string(), server_id) {
+            let mut repost = false;
+            for link in self.get_links(&msg.content) {
+                repost |= match db.query_links(&link, server_id) {
                     Ok(reposts) => {
                         println!("Found {} reposts: {:?}", reposts.len(), reposts);
                         reposts.len() > 0
@@ -95,12 +94,8 @@ impl EventHandler for Handler {
                     }
                 };
 
-                if ret {
-                    msg.channel_id.say(&ctx.http, "REPOST").await;
-                }
-
                 let l = Link {
-                    link: unwrapped,
+                    link: link,
                     server: server_id,
                     channel: *msg.channel_id.as_u64(),
                     message: *msg.id.as_u64(),
@@ -108,6 +103,13 @@ impl EventHandler for Handler {
                 };
 
                 log_error(db.insert_link(l), "Insert link".to_string());
+            }
+
+            if repost {
+                match msg.reply(&ctx.http, "REPOST").await {
+                    Ok(_) => (),
+                    Err(why) => println!("Failed to inform of REPOST: {:?}", why),
+                }
             }
         }
     }

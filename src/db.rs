@@ -177,7 +177,7 @@ impl DB {
         }
     }
 
-    pub fn query_links(&self, link: String, server: u64) -> Result<Vec<Link>> {
+    pub fn query_links(&self, link: &str, server: u64) -> Result<Vec<Link>> {
         let mut stmt = self.conn.prepare_cached(
             "SELECT L.id, L.link, L.server, L.channel, L.message, C.name, S.name
             FROM link AS L 
