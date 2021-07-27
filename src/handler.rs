@@ -35,7 +35,7 @@ impl Handler {
     }
 }
 
-fn log_error<T>(r: Result<T>, label: String) {
+fn log_error<T>(r: Result<T>, label: &str) {
     match r {
         Ok(_) => (),
         Err(why) => println!("{} failed with error: {:?}", label, why),
@@ -68,7 +68,7 @@ impl EventHandler for Handler {
         let server_name = server.name(&ctx.cache).await;
         log_error(
             db.update_server(server_id, &server_name),
-            "Db update server".to_string(),
+            "Db update server",
         );
 
         // get channel id and load message
@@ -76,13 +76,13 @@ impl EventHandler for Handler {
         let channel_name = msg.channel_id.name(&ctx.cache).await;
         log_error(
             db.update_channel(channel_id, server_id, channel_name.unwrap()),
-            "Db update channel".to_string(),
+            "Db update channel",
         );
 
         let message_id = *msg.id.as_u64();
         log_error(
             db.add_message(message_id, channel_id, server_id),
-            "Db add message".to_string(),
+            "Db add message",
         );
 
         if msg.kind == MessageType::Regular {
@@ -108,7 +108,7 @@ impl EventHandler for Handler {
                         message: *msg.id.as_u64(),
                         ..Default::default()
                     }),
-                    "Insert link".to_string(),
+                    "Insert link",
                 );
             }
 
@@ -154,7 +154,7 @@ impl EventHandler for Handler {
                     GuildStatus::Offline(g) => db.update_server(*g.id.as_u64(), &None),
                     _ => Ok(()),
                 },
-                "db update server".to_string(),
+                "db update server",
             );
         }
     }
