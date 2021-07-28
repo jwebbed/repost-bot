@@ -1,3 +1,5 @@
+mod commands;
+
 use linkify::{LinkFinder, LinkKind};
 use rusqlite::Result;
 
@@ -52,6 +54,11 @@ impl EventHandler for Handler {
 
         if msg.guild_id.is_none() {
             println!("Guild id doesn't exist, for now we don't care about this");
+            return;
+        }
+
+        if msg.content.starts_with("!rpm") {
+            self.handle_command(&ctx, &msg);
             return;
         }
 
