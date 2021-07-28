@@ -58,7 +58,7 @@ impl EventHandler for Handler {
         }
 
         if msg.content.starts_with("!rpm") {
-            self.handle_command(&ctx, &msg);
+            self.handle_command(&ctx, &msg).await;
             return;
         }
 
