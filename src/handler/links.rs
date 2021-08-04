@@ -101,21 +101,10 @@ fn filtered_url(url_str: &str) -> Result<Url> {
     Ok(url)
 }
 
-fn query_link_matches(url_str: String, server: u64) -> Result<Vec<Link>> {
-    let url = filtered_url(&url_str)?;
-    let host = url.host_str().ok_or(rusqlite::Error::QueryReturnedNoRows)?;
-    let path = url.path();
-
-    let fields = url
-        .query_pairs()
-        .map(|(field, _)| field.to_string())
-        .collect();
-
+fn query_link_matches(url_str: &str, server: u64) -> Result<Vec<Link>> {
     let mut links = Vec::new();
-    for link in DB::db_call(|db| db.query_links_host_path_fields(host, path, server, &fields))? {
-        if url == filtered_url(&link.link)? {
-            links.push(link)
-        }
+    for link in DB::db_call(|db| db.query_links(url_str, server))? {
+        links.push(link)
     }
     Ok(links)
 }
@@ -131,11 +120,18 @@ fn get_links(msg: &str) -> Vec<String> {
 }
 
 impl Handler {
-    pub async fn check_links(&self, ctx: &Context, msg: &Message) {
+    pub fn store_links_and_get_reposts(&self, msg: &Message) -> Vec<Link> {
         let mut reposts = Vec::new();
         let server_id = *msg.guild_id.unwrap().as_u64();
         for link in get_links(&msg.content) {
-            match query_link_matches(link.clone(), server_id) {
+            let filtered_link = match filtered_url(&link) {
+                Ok(url) => url,
+                Err(why) => {
+                    println!("Failed to filter url: {:?}", why);
+                    continue;
+                }
+            };
+            match query_link_matches(filtered_link.as_str(), server_id) {
                 Ok(results) => {
                     println!("Found {} reposts: {:?}", results.len(), results);
                     for result in results {
@@ -149,19 +145,15 @@ impl Handler {
 
             // first need to insert into db
             log_error(
-                DB::db_call(|db| {
-                    db.insert_link(Link {
-                        link: link.into(),
-                        server: server_id,
-                        channel: *msg.channel_id.as_u64(),
-                        message: *msg.id.as_u64(),
-                        ..Default::default()
-                    })
-                }),
+                DB::db_call(|db| db.insert_link(filtered_link.as_str(), *msg.id.as_u64())),
                 "Insert link",
             );
         }
 
+        reposts
+    }
+    pub async fn check_links(&self, ctx: &Context, msg: &Message) {
+        let reposts = self.store_links_and_get_reposts(msg);
         if reposts.len() > 0 {
             let repost_str = if reposts.len() > 1 {
                 format!(

@@ -14,12 +14,11 @@ codegen-units = 1
 [dependencies]
 url = "2"
 linkify = "0.7.0"
-num = "0.4"
 
 [dependencies.serenity]
 version = "0.10"
 default-features = false
-features = ["client", "gateway", "rustls_backend", "model", "cache"]
+features = ["client", "gateway", "rustls_backend", "model", "cache", "http"]
 
 [dependencies.tokio]
 version = "1.0"
@@ -27,4 +26,4 @@ features = ["macros", "rt-multi-thread"]
 
 [dependencies.rusqlite]
 version = "0.25.3"
-features = ["bundled", "array"]
+features = ["bundled"]
