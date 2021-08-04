@@ -1,7 +1,6 @@
 mod commands;
 mod links;
 
-use linkify::{LinkFinder, LinkKind};
 use rusqlite::Result;
 
 use serenity::{
@@ -12,18 +11,7 @@ use serenity::{
 
 use crate::db::DB;
 
-pub struct Handler {
-    finder: LinkFinder,
-}
-
-impl Handler {
-    pub fn new() -> Handler {
-        let mut finder = LinkFinder::new();
-        finder.kinds(&[LinkKind::Url]);
-
-        Handler { finder }
-    }
-}
+pub struct Handler;
 
 pub fn log_error<T>(r: Result<T>, label: &str) {
     match r {

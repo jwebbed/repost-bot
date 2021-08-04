@@ -31,7 +31,7 @@ async fn main() {
     // automatically prepend your bot token with "Bot ", which is a requirement
     // by Discord for bot users.
     let mut client = Client::builder(&token)
-        .event_handler(Handler::new())
+        .event_handler(Handler {})
         .await
         .expect("Err creating client");
 

@@ -3,6 +3,7 @@ use super::{log_error, Handler};
 use crate::db::DB;
 use crate::structs::Link;
 
+use linkify::{LinkFinder, LinkKind};
 use rusqlite::Result;
 use serenity::{
     model::channel::Message,
@@ -123,18 +124,17 @@ fn get_link_str(link: &Link) -> String {
     MessageId(link.message).link(ChannelId(link.channel), Some(GuildId(link.server)))
 }
 
-impl Handler {
-    fn get_links(&self, msg: &str) -> Vec<String> {
-        self.finder
-            .links(msg)
-            .map(|x| x.as_str().to_string())
-            .collect()
-    }
+fn get_links(msg: &str) -> Vec<String> {
+    let mut finder = LinkFinder::new();
+    finder.kinds(&[LinkKind::Url]);
+    finder.links(msg).map(|x| x.as_str().to_string()).collect()
+}
 
+impl Handler {
     pub async fn check_links(&self, ctx: &Context, msg: &Message) {
         let mut reposts = Vec::new();
         let server_id = *msg.guild_id.unwrap().as_u64();
-        for link in self.get_links(&msg.content) {
+        for link in get_links(&msg.content) {
             match query_link_matches(link.clone(), server_id) {
                 Ok(results) => {
                     println!("Found {} reposts: {:?}", results.len(), results);
@@ -189,11 +189,10 @@ mod tests {
     use super::*;
     #[test]
     fn basic_link() {
-        let handler = Handler::new();
-        let link = "https://twitter.com/user/status/idnumber?s=20";
-        let links = handler.get_links(link);
+        let links = get_links("test msg with link https://twitter.com/user/status/idnumber?s=20");
 
         assert_eq!(links.len(), 1);
+        assert_eq!(links[0], "https://twitter.com/user/status/idnumber?s=20");
     }
 
     #[test]
