@@ -6,21 +6,15 @@ use serenity::prelude::*;
 use std::env;
 use std::process;
 
-use db::get_db;
+use db::DB;
 use handler::Handler;
 
 fn migrate_db() {
-    match get_db() {
-        Ok(db) => match db.migrate() {
-            Ok(_) => println!("Sucessfully loaded and migrated db"),
-            Err(why) => {
-                println!("Failed to migrate, exiting {:?}", why);
-                process::exit(-1);
-            }
-        },
+    match DB::migrate() {
+        Ok(_) => println!("Sucessfully loaded and migrated db"),
         Err(why) => {
-            println!("Failed to get db, exiting {:?}", why);
-            process::exit(-1)
+            println!("Failed to migrate, exiting {:?}", why);
+            process::exit(-1);
         }
     };
 }
