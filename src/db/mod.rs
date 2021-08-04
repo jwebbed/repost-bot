@@ -3,10 +3,10 @@ mod queries;
 
 use crate::structs::Link;
 use rusqlite::{params, Connection, Result};
+use std::cell::RefCell;
 
-#[derive(Debug)]
 pub struct DB {
-    pub conn: Connection,
+    conn: RefCell<Connection>,
 }
 
 impl DB {
@@ -24,7 +24,7 @@ impl DB {
     pub fn get_db() -> Result<DB> {
         // set to true to test without migration issues
         Ok(DB {
-            conn: DB::get_connection()?,
+            conn: RefCell::new(DB::get_connection()?),
         })
     }
     pub fn db_call<F, T>(f: F) -> Result<T>
@@ -39,7 +39,8 @@ impl DB {
     }
 
     pub fn update_server(&self, server_id: u64, name: &Option<String>) -> Result<()> {
-        let mut stmt = self.conn.prepare_cached(
+        let conn = self.conn.borrow();
+        let mut stmt = conn.prepare_cached(
             "INSERT INTO server (id, name) VALUES ( ?1, ?2 )
             ON CONFLICT(id) DO UPDATE SET name=excluded.name
             WHERE (server.name IS NULL AND excluded.name IS NOT NULL)",
@@ -68,7 +69,8 @@ impl DB {
     }
 
     pub fn update_channel(&self, channel_id: u64, server_id: u64, name: String) -> Result<()> {
-        let mut stmt = self.conn.prepare(
+        let conn = self.conn.borrow();
+        let mut stmt = conn.prepare(
             "INSERT INTO channel (id, name, server) VALUES ( ?1, ?2, ?3 )
             ON CONFLICT(id) DO NOTHING",
         )?;
@@ -86,7 +88,8 @@ impl DB {
     }
 
     pub fn add_message(&self, message_id: u64, channel_id: u64, server_id: u64) -> Result<bool> {
-        let mut stmt = self.conn.prepare(
+        let conn = self.conn.borrow();
+        let mut stmt = conn.prepare(
             "INSERT INTO message (id, server, channel) VALUES ( ?1, ?2, ?3 )
             ON CONFLICT(id) DO NOTHING",
         )?;
@@ -107,11 +110,13 @@ impl DB {
     pub fn insert_link(&self, link: &str, message_id: u64) -> Result<()> {
         println!("Inserting the following link {:?}", link);
 
-        self.conn.execute(
+        let mut conn = self.conn.borrow_mut();
+        let tx = conn.transaction()?;
+        tx.execute(
             "INSERT INTO link (link) VALUES (?1) ON CONFLICT(link) DO NOTHING;",
             [link],
         )?;
-        self.conn.execute(
+        tx.execute(
             "INSERT INTO message_link (link, message) 
             VALUES (
                 (SELECT id FROM link WHERE link=(?1)), 
@@ -120,11 +125,14 @@ impl DB {
             params![link, message_id],
         )?;
 
+        tx.commit()?;
+
         Ok(())
     }
 
     pub fn query_links(&self, link: &str, server: u64) -> Result<Vec<Link>> {
-        let mut stmt = self.conn.prepare(
+        let conn = self.conn.borrow();
+        let mut stmt = conn.prepare(
             "SELECT L.id, L.link, S.id, C.id, M.id, C.name, S.name
             FROM link AS L 
             JOIN message_link as ML on ML.link=L.id
