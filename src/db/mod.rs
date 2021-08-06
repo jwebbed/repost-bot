@@ -1,8 +1,9 @@
 mod migrations;
 mod queries;
 
+use crate::errors::{Error, Result};
 use crate::structs::Link;
-use rusqlite::{params, Connection, Result};
+use rusqlite::{params, Connection};
 use std::cell::RefCell;
 
 pub struct DB {
@@ -64,7 +65,7 @@ impl DB {
 
                 Ok(())
             }
-            Err(why) => Err(why),
+            Err(why) => Err(Error::from(why)),
         }
     }
 
@@ -83,8 +84,29 @@ impl DB {
 
                 Ok(())
             }
-            Err(why) => Err(why),
+            Err(why) => Err(Error::from(why)),
         }
+    }
+
+    pub fn get_oldest_message(&self, channel_id: u64) -> Result<Option<u64>> {
+        let conn = self.conn.borrow();
+        let ret = conn.query_row(
+            "SELECT oldest_message FROM channel WHERE id=(?1)",
+            [channel_id],
+            |row| row.get(0),
+        )?;
+
+        Ok(ret)
+    }
+
+    pub fn set_oldest_message(&self, channel_id: u64, message_id: u64) -> Result<()> {
+        let conn = self.conn.borrow();
+        conn.execute(
+            "UPDATE channel SET oldest_message=(?1) WHERE id=(?2)",
+            params![message_id, channel_id],
+        )?;
+
+        Ok(())
     }
 
     pub fn add_message(&self, message_id: u64, channel_id: u64, server_id: u64) -> Result<bool> {
@@ -103,7 +125,7 @@ impl DB {
                     Ok(false)
                 }
             }
-            Err(why) => Err(why),
+            Err(why) => Err(Error::from(why)),
         }
     }
 

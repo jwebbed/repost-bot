@@ -1,5 +1,6 @@
 use super::queries;
-use rusqlite::{Connection, Result};
+use crate::errors::Result;
+use rusqlite::Connection;
 
 const MIGRATION_1: [&str; 6] = [
     // add server table
@@ -12,6 +13,7 @@ const MIGRATION_1: [&str; 6] = [
         id INTEGER PRIMARY KEY, 
         name TEXT,
         server INTEGER,
+        oldest_message INTEGER,
         FOREIGN KEY(server) REFERENCES server(id)
     );",
     // add message table
