@@ -1,11 +1,11 @@
 use super::{log_error, Handler};
 
 use crate::db::DB;
+use crate::errors::Result;
 use crate::structs::Link;
 
 use linkify::{LinkFinder, LinkKind};
 use phf::phf_set;
-use rusqlite::Result;
 use serenity::{
     model::channel::Message,
     model::id::{ChannelId, GuildId, MessageId},
@@ -170,8 +170,13 @@ impl Handler {
 
         reposts
     }
-    pub async fn check_links(&self, ctx: &Context, msg: &Message) {
-        let reposts = self.store_links_and_get_reposts(msg);
+
+    async fn reply_with_reposts(
+        &self,
+        ctx: &Context,
+        msg: &Message,
+        reposts: &Vec<Link>,
+    ) -> Result<()> {
         if reposts.len() > 0 {
             let repost_str = if reposts.len() > 1 {
                 format!(
@@ -186,10 +191,20 @@ impl Handler {
                 get_link_str(&reposts[0])
             };
 
-            match msg.reply(&ctx.http, format!("REPOST {}", repost_str)).await {
-                Ok(_) => (),
-                Err(why) => println!("Failed to inform of REPOST: {:?}", why),
-            }
+            /*match  {
+                Ok(_) => Ok(()),
+                Err(_why) => Err(rusqlite::Error::QueryReturnedNoRows),
+            }*/
+            msg.reply(&ctx.http, format!("REPOST {}", repost_str))
+                .await?;
+        }
+        Ok(())
+    }
+    pub async fn check_links(&self, ctx: &Context, msg: &Message) {
+        let reposts = self.store_links_and_get_reposts(msg);
+        match self.reply_with_reposts(ctx, msg, &reposts).await {
+            Ok(_) => (),
+            Err(why) => println!("Failed to inform of REPOST: {:?}", why),
         }
     }
 }
