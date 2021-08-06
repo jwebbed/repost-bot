@@ -108,7 +108,6 @@ impl EventHandler for Handler {
             "Db update channel",
         );
 
-        let message_id = *msg.id.as_u64();
         log_error(
             db.add_message(msg.id, channel_id, server_id),
             "Db add message",
