@@ -191,10 +191,6 @@ impl Handler {
                 get_link_str(&reposts[0])
             };
 
-            /*match  {
-                Ok(_) => Ok(()),
-                Err(_why) => Err(rusqlite::Error::QueryReturnedNoRows),
-            }*/
             msg.reply(&ctx.http, format!("REPOST {}", repost_str))
                 .await?;
         }
