@@ -14,6 +14,7 @@ codegen-units = 1
 [dependencies]
 url = "2"
 linkify = "0.7.0"
+phf = { version = "0.9", features = ["macros"] }
 
 [dependencies.serenity]
 version = "0.10"

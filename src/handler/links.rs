@@ -4,6 +4,7 @@ use crate::db::DB;
 use crate::structs::Link;
 
 use linkify::{LinkFinder, LinkKind};
+use phf::phf_set;
 use rusqlite::Result;
 use serenity::{
     model::channel::Message,
@@ -12,9 +13,13 @@ use serenity::{
 };
 use url::Url;
 
-// largely sourced from newhouse/url-tracking-stripper
-const TWITTER_FIELDS: [&str; 1] = ["s"];
-const GENERIC_FIELDS: [&str; 28] = [
+// largely sourced from newhouse/url-tracking-stripper on github
+
+static TWITTER_FIELDS: phf::Set<&'static str> = phf_set! {
+    "s"
+};
+
+static GENERIC_FIELDS: phf::Set<&'static str> = phf_set! {
     // Google's Urchin Tracking Module
     "utm_source",
     "utm_medium",
@@ -58,8 +63,19 @@ const GENERIC_FIELDS: [&str; 28] = [
     // Alibaba-family 'super position model' tracker:
     // https://github.com/newhouse/url-tracking-stripper/issues/38
     "spm",
-];
+};
 
+/// filter_field returns true if we should filter a field out in a query string,
+/// otherwise returns false.
+///
+/// We filter fields that are largely meant for tracking and as such not meaningfully
+/// useful for comparison purposes. Without filtering out tracking filters otherwise
+/// identical links may not be the same because of different tracking values for
+/// different users.
+///
+/// Requires the host as well as sometimes we do specific filters for specifics hosts
+/// i.e we filter "s" on twitter but nothing else. It should be expected that this
+/// function will grow over time
 #[inline(always)]
 fn filter_field(host: &str, field: &str) -> bool {
     let host_match = match host {
@@ -69,6 +85,8 @@ fn filter_field(host: &str, field: &str) -> bool {
     host_match || GENERIC_FIELDS.contains(&field)
 }
 
+/// filtered_url takes a url_str and returns a Url object with the any irrelevent
+/// fields in the query string removed as per filter_field
 fn filtered_url(url_str: &str) -> Result<Url> {
     let mut url = match Url::parse(url_str) {
         Ok(url) => Ok(url),
@@ -180,11 +198,35 @@ impl Handler {
 mod tests {
     use super::*;
     #[test]
-    fn basic_link() {
+    fn test_extract_link() {
         let links = get_links("test msg with link https://twitter.com/user/status/idnumber?s=20");
 
         assert_eq!(links.len(), 1);
         assert_eq!(links[0], "https://twitter.com/user/status/idnumber?s=20");
+    }
+
+    #[test]
+    fn test_extract_multiple_links() {
+        let links = get_links(
+            "test msg with link https://twitter.com/user/status/idnumber?s=20 and
+             another link https://www.bbc.com/news/article",
+        );
+
+        assert_eq!(links.len(), 2);
+        assert!(links.contains(&"https://twitter.com/user/status/idnumber?s=20".to_string()));
+        assert!(links.contains(&"https://www.bbc.com/news/article".to_string()));
+    }
+
+    #[test]
+    fn test_extract_no_link() {
+        assert_eq!(
+            get_links("just a random message with no links in it").len(),
+            0
+        );
+        assert_eq!(
+            get_links("example@example.org isnt a link but could be by some definitions").len(),
+            0
+        );
     }
 
     #[test]
