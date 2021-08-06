@@ -13,7 +13,6 @@ const MIGRATION_1: [&str; 6] = [
         id INTEGER PRIMARY KEY, 
         name TEXT,
         server INTEGER,
-        oldest_message INTEGER,
         FOREIGN KEY(server) REFERENCES server(id)
     );",
     // add message table
@@ -21,6 +20,7 @@ const MIGRATION_1: [&str; 6] = [
         id INTEGER PRIMARY KEY,
         server INTEGER,
         channel INTEGER,
+        created_at NUMERIC,
         FOREIGN KEY(server) REFERENCES server(id),
         FOREIGN KEY(channel) REFERENCES channel(id)
     );",

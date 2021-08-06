@@ -4,6 +4,7 @@ mod queries;
 use crate::errors::{Error, Result};
 use crate::structs::Link;
 use rusqlite::{params, Connection};
+use serenity::model::id::MessageId;
 use std::cell::RefCell;
 
 pub struct DB {
@@ -91,7 +92,7 @@ impl DB {
     pub fn get_oldest_message(&self, channel_id: u64) -> Result<Option<u64>> {
         let conn = self.conn.borrow();
         let ret = conn.query_row(
-            "SELECT oldest_message FROM channel WHERE id=(?1)",
+            "SELECT id FROM message WHERE channel=(?1) ORDER BY created_at asc LIMIT 1",
             [channel_id],
             |row| row.get(0),
         )?;
@@ -99,24 +100,24 @@ impl DB {
         Ok(ret)
     }
 
-    pub fn set_oldest_message(&self, channel_id: u64, message_id: u64) -> Result<()> {
-        let conn = self.conn.borrow();
-        conn.execute(
-            "UPDATE channel SET oldest_message=(?1) WHERE id=(?2)",
-            params![message_id, channel_id],
-        )?;
-
-        Ok(())
-    }
-
-    pub fn add_message(&self, message_id: u64, channel_id: u64, server_id: u64) -> Result<bool> {
+    pub fn add_message(
+        &self,
+        message_id: MessageId,
+        channel_id: u64,
+        server_id: u64,
+    ) -> Result<bool> {
         let conn = self.conn.borrow();
         let mut stmt = conn.prepare(
-            "INSERT INTO message (id, server, channel) VALUES ( ?1, ?2, ?3 )
+            "INSERT INTO message (id, server, channel, created_at) VALUES ( ?1, ?2, ?3, ?4 )
             ON CONFLICT(id) DO NOTHING",
         )?;
 
-        match stmt.execute(params![message_id, server_id, channel_id]) {
+        match stmt.execute(params![
+            *message_id.as_u64(),
+            server_id,
+            channel_id,
+            message_id.created_at()
+        ]) {
             Ok(cnt) => {
                 if cnt > 0 {
                     println!("Added message_id {} db", message_id);

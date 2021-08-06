@@ -37,7 +37,6 @@ impl Handler {
 
         let messages = http.get_messages(channel_id, &query).await?;
         if messages.len() > 0 {
-            let last = *messages.last().unwrap().id.as_u64();
             for mut msg in messages {
                 if msg.author.bot {
                     continue;
@@ -46,7 +45,7 @@ impl Handler {
                     msg.guild_id = Some(GuildId(server_id));
                 }
                 if db.add_message(
-                    *msg.id.as_u64(),
+                    msg.id,
                     *msg.channel_id.as_u64(),
                     *msg.guild_id.unwrap().as_u64(),
                 )? {
@@ -59,7 +58,6 @@ impl Handler {
                     println!("message {} already processed", msg.id.as_u64());
                 }
             }
-            db.set_oldest_message(channel_id, last)?;
         } else {
             println!("received no messages to process")
         }
@@ -112,7 +110,7 @@ impl EventHandler for Handler {
 
         let message_id = *msg.id.as_u64();
         log_error(
-            db.add_message(message_id, channel_id, server_id),
+            db.add_message(msg.id, channel_id, server_id),
             "Db add message",
         );
 
