@@ -1,6 +1,6 @@
 [package]
 name = "repost-bot"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Jonathan Webb <jonathan@webb.nyc>"]
 edition = "2018"
 license = "GPL-3.0-or-later"
