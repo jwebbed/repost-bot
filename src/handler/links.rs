@@ -212,7 +212,7 @@ impl Handler {
                 get_link_str(&reposts[0])
             };
 
-            msg.reply(&ctx.http, format!("REPOST {}", repost_str))
+            msg.reply(&ctx.http, format!("🚨 REPOST 🚨 {}", repost_str))
                 .await?;
         }
         Ok(())
