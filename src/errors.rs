@@ -1,5 +1,6 @@
 use rusqlite;
 use serenity;
+use url;
 
 use std::{
     error::Error as StdError,
@@ -13,6 +14,7 @@ pub type Result<T> = result::Result<T, Error>;
 pub enum Error {
     Serenity(serenity::Error),
     Rusqlite(rusqlite::Error),
+    Url(url::ParseError),
 }
 
 impl Display for Error {
@@ -20,6 +22,7 @@ impl Display for Error {
         match self {
             Error::Serenity(inner) => fmt::Display::fmt(&inner, f),
             Error::Rusqlite(inner) => fmt::Display::fmt(&inner, f),
+            Error::Url(inner) => fmt::Display::fmt(&inner, f),
         }
     }
 }
@@ -35,5 +38,11 @@ impl From<serenity::Error> for Error {
 impl From<rusqlite::Error> for Error {
     fn from(e: rusqlite::Error) -> Error {
         Error::Rusqlite(e)
+    }
+}
+
+impl From<url::ParseError> for Error {
+    fn from(e: url::ParseError) -> Error {
+        Error::Url(e)
     }
 }
