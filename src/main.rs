@@ -1,4 +1,5 @@
 mod db;
+mod errors;
 mod handler;
 mod structs;
 
@@ -23,7 +24,6 @@ fn migrate_db() {
 async fn main() {
     // Configure the client with your Discord bot token in the environment.
     let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
-
     // migrate the db
     migrate_db();
 
@@ -31,7 +31,7 @@ async fn main() {
     // automatically prepend your bot token with "Bot ", which is a requirement
     // by Discord for bot users.
     let mut client = Client::builder(&token)
-        .event_handler(Handler::new())
+        .event_handler(Handler {})
         .await
         .expect("Err creating client");
 

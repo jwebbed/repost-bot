@@ -1,9 +1,11 @@
 use super::{log_error, Handler};
 
 use crate::db::DB;
+use crate::errors::Result;
 use crate::structs::Link;
 
-use rusqlite::Result;
+use linkify::{LinkFinder, LinkKind};
+use phf::phf_set;
 use serenity::{
     model::channel::Message,
     model::id::{ChannelId, GuildId, MessageId},
@@ -11,9 +13,13 @@ use serenity::{
 };
 use url::Url;
 
-// largely sourced from newhouse/url-tracking-stripper
-const TWITTER_FIELDS: [&str; 1] = ["s"];
-const GENERIC_FIELDS: [&str; 28] = [
+// largely sourced from newhouse/url-tracking-stripper on github
+
+static TWITTER_FIELDS: phf::Set<&'static str> = phf_set! {
+    "s"
+};
+
+static GENERIC_FIELDS: phf::Set<&'static str> = phf_set! {
     // Google's Urchin Tracking Module
     "utm_source",
     "utm_medium",
@@ -57,8 +63,19 @@ const GENERIC_FIELDS: [&str; 28] = [
     // Alibaba-family 'super position model' tracker:
     // https://github.com/newhouse/url-tracking-stripper/issues/38
     "spm",
-];
+};
 
+/// filter_field returns true if we should filter a field out in a query string,
+/// otherwise returns false.
+///
+/// We filter fields that are largely meant for tracking and as such not meaningfully
+/// useful for comparison purposes. Without filtering out tracking filters otherwise
+/// identical links may not be the same because of different tracking values for
+/// different users.
+///
+/// Requires the host as well as sometimes we do specific filters for specifics hosts
+/// i.e we filter "s" on twitter but nothing else. It should be expected that this
+/// function will grow over time
 #[inline(always)]
 fn filter_field(host: &str, field: &str) -> bool {
     let host_match = match host {
@@ -68,6 +85,8 @@ fn filter_field(host: &str, field: &str) -> bool {
     host_match || GENERIC_FIELDS.contains(&field)
 }
 
+/// filtered_url takes a url_str and returns a Url object with the any irrelevent
+/// fields in the query string removed as per filter_field
 fn filtered_url(url_str: &str) -> Result<Url> {
     let mut url = match Url::parse(url_str) {
         Ok(url) => Ok(url),
@@ -100,21 +119,10 @@ fn filtered_url(url_str: &str) -> Result<Url> {
     Ok(url)
 }
 
-fn query_link_matches(url_str: String, server: u64) -> Result<Vec<Link>> {
-    let url = filtered_url(&url_str)?;
-    let host = url.host_str().ok_or(rusqlite::Error::QueryReturnedNoRows)?;
-    let path = url.path();
-
-    let fields = url
-        .query_pairs()
-        .map(|(field, _)| field.to_string())
-        .collect();
-
+fn query_link_matches(url_str: &str, server: u64) -> Result<Vec<Link>> {
     let mut links = Vec::new();
-    for link in DB::db_call(|db| db.query_links_host_path_fields(host, path, server, &fields))? {
-        if url == filtered_url(&link.link)? {
-            links.push(link)
-        }
+    for link in DB::db_call(|db| db.query_links(url_str, server))? {
+        links.push(link)
     }
     Ok(links)
 }
@@ -123,19 +131,25 @@ fn get_link_str(link: &Link) -> String {
     MessageId(link.message).link(ChannelId(link.channel), Some(GuildId(link.server)))
 }
 
-impl Handler {
-    fn get_links(&self, msg: &str) -> Vec<String> {
-        self.finder
-            .links(msg)
-            .map(|x| x.as_str().to_string())
-            .collect()
-    }
+fn get_links(msg: &str) -> Vec<String> {
+    let mut finder = LinkFinder::new();
+    finder.kinds(&[LinkKind::Url]);
+    finder.links(msg).map(|x| x.as_str().to_string()).collect()
+}
 
-    pub async fn check_links(&self, ctx: &Context, msg: &Message) {
+impl Handler {
+    pub fn store_links_and_get_reposts(&self, msg: &Message) -> Vec<Link> {
         let mut reposts = Vec::new();
         let server_id = *msg.guild_id.unwrap().as_u64();
-        for link in self.get_links(&msg.content) {
-            match query_link_matches(link.clone(), server_id) {
+        for link in get_links(&msg.content) {
+            let filtered_link = match filtered_url(&link) {
+                Ok(url) => url,
+                Err(why) => {
+                    println!("Failed to filter url: {:?}", why);
+                    continue;
+                }
+            };
+            match query_link_matches(filtered_link.as_str(), server_id) {
                 Ok(results) => {
                     println!("Found {} reposts: {:?}", results.len(), results);
                     for result in results {
@@ -149,19 +163,20 @@ impl Handler {
 
             // first need to insert into db
             log_error(
-                DB::db_call(|db| {
-                    db.insert_link(Link {
-                        link: link.into(),
-                        server: server_id,
-                        channel: *msg.channel_id.as_u64(),
-                        message: *msg.id.as_u64(),
-                        ..Default::default()
-                    })
-                }),
+                DB::db_call(|db| db.insert_link(filtered_link.as_str(), *msg.id.as_u64())),
                 "Insert link",
             );
         }
 
+        reposts
+    }
+
+    async fn reply_with_reposts(
+        &self,
+        ctx: &Context,
+        msg: &Message,
+        reposts: &Vec<Link>,
+    ) -> Result<()> {
         if reposts.len() > 0 {
             let repost_str = if reposts.len() > 1 {
                 format!(
@@ -176,10 +191,16 @@ impl Handler {
                 get_link_str(&reposts[0])
             };
 
-            match msg.reply(&ctx.http, format!("REPOST {}", repost_str)).await {
-                Ok(_) => (),
-                Err(why) => println!("Failed to inform of REPOST: {:?}", why),
-            }
+            msg.reply(&ctx.http, format!("REPOST {}", repost_str))
+                .await?;
+        }
+        Ok(())
+    }
+    pub async fn check_links(&self, ctx: &Context, msg: &Message) {
+        let reposts = self.store_links_and_get_reposts(msg);
+        match self.reply_with_reposts(ctx, msg, &reposts).await {
+            Ok(_) => (),
+            Err(why) => println!("Failed to inform of REPOST: {:?}", why),
         }
     }
 }
@@ -188,12 +209,35 @@ impl Handler {
 mod tests {
     use super::*;
     #[test]
-    fn basic_link() {
-        let handler = Handler::new();
-        let link = "https://twitter.com/user/status/idnumber?s=20";
-        let links = handler.get_links(link);
+    fn test_extract_link() {
+        let links = get_links("test msg with link https://twitter.com/user/status/idnumber?s=20");
 
         assert_eq!(links.len(), 1);
+        assert_eq!(links[0], "https://twitter.com/user/status/idnumber?s=20");
+    }
+
+    #[test]
+    fn test_extract_multiple_links() {
+        let links = get_links(
+            "test msg with link https://twitter.com/user/status/idnumber?s=20 and
+             another link https://www.bbc.com/news/article",
+        );
+
+        assert_eq!(links.len(), 2);
+        assert!(links.contains(&"https://twitter.com/user/status/idnumber?s=20".to_string()));
+        assert!(links.contains(&"https://www.bbc.com/news/article".to_string()));
+    }
+
+    #[test]
+    fn test_extract_no_link() {
+        assert_eq!(
+            get_links("just a random message with no links in it").len(),
+            0
+        );
+        assert_eq!(
+            get_links("example@example.org isnt a link but could be by some definitions").len(),
+            0
+        );
     }
 
     #[test]

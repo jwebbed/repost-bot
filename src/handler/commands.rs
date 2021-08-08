@@ -1,5 +1,6 @@
 use super::Handler;
 
+use crate::db::DB;
 use serenity::{model::channel::ChannelType, model::channel::Message, prelude::*};
 use std::collections::HashMap;
 
@@ -12,6 +13,7 @@ impl Handler {
         let command = &msg.content[4..].trim();
         match command {
             &"pins" => self.pins(ctx, msg).await,
+            &"reposts" => self.repost_cnt(ctx, msg).await,
             _ => println!("Received unknown command: \"{}\"", command),
         }
     }
@@ -64,7 +66,28 @@ impl Handler {
 
         match msg.channel_id.say(&ctx.http, response).await {
             Ok(_) => (),
-            Err(why) => println!("Failed to inform of REPOST: {:?}", why),
+            Err(why) => println!("Failed to inform of PINS: {:?}", why),
+        }
+    }
+
+    async fn repost_cnt(&self, ctx: &Context, msg: &Message) {
+        let reposts = match DB::db_call(|db| db.get_repost_list(*msg.guild_id.unwrap().as_u64())) {
+            Ok(r) => r,
+            Err(_) => Vec::new(),
+        };
+
+        let response = format!(
+            "Count | Link\n{}",
+            reposts
+                .into_iter()
+                .map(|x| format!("{:<9} | <{}>", x.count, x.link))
+                .collect::<Vec<String>>()
+                .join("\n")
+        );
+
+        match msg.channel_id.say(&ctx.http, response).await {
+            Ok(_) => (),
+            Err(why) => println!("Failed to inform of REPOST COUNT: {:?}", why),
         }
     }
 }

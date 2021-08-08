@@ -1,34 +1,64 @@
 mod commands;
 mod links;
 
-use linkify::{LinkFinder, LinkKind};
-use rusqlite::Result;
-
+use crate::errors::Result;
 use serenity::{
     async_trait,
-    model::{channel::Message, channel::MessageType, gateway::Ready, guild::GuildStatus},
+    http::Http,
+    model::{
+        channel::Message, channel::MessageType, gateway::Ready, guild::GuildStatus, id::GuildId,
+    },
     prelude::*,
 };
 
 use crate::db::DB;
 
-pub struct Handler {
-    finder: LinkFinder,
-}
-
-impl Handler {
-    pub fn new() -> Handler {
-        let mut finder = LinkFinder::new();
-        finder.kinds(&[LinkKind::Url]);
-
-        Handler { finder }
-    }
-}
+pub struct Handler;
 
 pub fn log_error<T>(r: Result<T>, label: &str) {
     match r {
         Ok(_) => (),
         Err(why) => println!("{} failed with error: {:?}", label, why),
+    }
+}
+impl Handler {
+    async fn process_old_messages(
+        &self,
+        http: &Http,
+        channel_id: u64,
+        server_id: u64,
+    ) -> Result<()> {
+        const LIMIT: u64 = 50;
+        let db = DB::get_db()?;
+        let query = match db.get_oldest_message(channel_id)? {
+            Some(value) => format!("?limit={}&before={}", LIMIT, value),
+            None => format!("?limit={}", LIMIT),
+        };
+
+        let messages = http.get_messages(channel_id, &query).await?;
+        if messages.len() > 0 {
+            for mut msg in messages {
+                if msg.author.bot {
+                    continue;
+                }
+                if msg.guild_id.is_none() {
+                    msg.guild_id = Some(GuildId(server_id));
+                }
+                if db.add_message(
+                    msg.id,
+                    *msg.channel_id.as_u64(),
+                    *msg.guild_id.unwrap().as_u64(),
+                )? {
+                    self.store_links_and_get_reposts(&msg);
+                } else {
+                    println!("message {} already processed", msg.id.as_u64());
+                }
+            }
+        } else {
+            println!("received no messages to process")
+        }
+
+        Ok(())
     }
 }
 
@@ -74,14 +104,18 @@ impl EventHandler for Handler {
             "Db update channel",
         );
 
-        let message_id = *msg.id.as_u64();
         log_error(
-            db.add_message(message_id, channel_id, server_id),
+            db.add_message(msg.id, channel_id, server_id),
             "Db add message",
         );
 
         if msg.kind == MessageType::Regular {
             self.check_links(&ctx, &msg).await;
+            log_error(
+                self.process_old_messages(&ctx.http, channel_id, server_id)
+                    .await,
+                "Process old messages",
+            );
         }
     }
 

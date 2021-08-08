@@ -1,6 +1,6 @@
 [package]
 name = "repost-bot"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Jonathan Webb <jonathan@webb.nyc>"]
 edition = "2018"
 license = "GPL-3.0-or-later"
@@ -14,12 +14,12 @@ codegen-units = 1
 [dependencies]
 url = "2"
 linkify = "0.7.0"
-num = "0.4"
+phf = { version = "0.9", features = ["macros"] }
 
 [dependencies.serenity]
 version = "0.10"
 default-features = false
-features = ["client", "gateway", "rustls_backend", "model", "cache"]
+features = ["client", "gateway", "rustls_backend", "model", "cache", "http"]
 
 [dependencies.tokio]
 version = "1.0"
@@ -27,4 +27,4 @@ features = ["macros", "rt-multi-thread"]
 
 [dependencies.rusqlite]
 version = "0.25.3"
-features = ["bundled", "array"]
+features = ["bundled", "chrono"]

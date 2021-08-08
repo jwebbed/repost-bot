@@ -1,32 +1,16 @@
 mod migrations;
 mod queries;
 
-use crate::structs::Link;
-use rusqlite::types::Value;
-use rusqlite::{params, Connection, Result};
-use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
-use url::Url;
+use crate::errors::{Error, Result};
+use crate::structs::{Link, RepostCount};
+use rusqlite::{params, Connection};
+use serenity::model::id::MessageId;
+use std::cell::RefCell;
 
-pub fn result_convert<T, E>(res: Result<T, E>) -> Result<T> {
-    match res {
-        Ok(x) => Ok(x),
-        Err(_) => Err(rusqlite::Error::InvalidQuery),
-    }
-}
-
-#[derive(Debug, Default)]
-struct QueryParam {
-    pub link_id: i64,
-    pub field: String,
-}
-
-#[derive(Debug)]
 pub struct DB {
-    pub conn: Connection,
+    conn: RefCell<Connection>,
 }
 
-#[allow(dead_code)]
 impl DB {
     fn get_connection() -> Result<Connection> {
         const IN_MEMORY_DB: bool = false;
@@ -37,13 +21,12 @@ impl DB {
             Connection::open(&path)?
         };
 
-        rusqlite::vtab::array::load_module(&db)?;
         Ok(db)
     }
     pub fn get_db() -> Result<DB> {
         // set to true to test without migration issues
         Ok(DB {
-            conn: DB::get_connection()?,
+            conn: RefCell::new(DB::get_connection()?),
         })
     }
     pub fn db_call<F, T>(f: F) -> Result<T>
@@ -57,33 +40,9 @@ impl DB {
         migrations::migrate(&mut DB::get_connection()?)
     }
 
-    fn get_version(&self) -> Result<u32> {
-        queries::get_version(&self.conn)
-    }
-
-    fn set_version(&self, version: u32) -> Result<()> {
-        queries::set_version(&self.conn, version)
-    }
-
-    pub fn insert_link(&self, link: Link) -> Result<()> {
-        println!("Inserting the following link {:?}", link);
-        let parsed = result_convert(Url::parse(&link.link))?;
-        //last_insert_rowid
-        self.conn.execute(
-            "INSERT INTO link (link, server, channel, message, host, path) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![link.link, link.server, link.channel, link.message, parsed.host_str().ok_or(rusqlite::Error::InvalidQuery)?, parsed.path()]
-        )?;
-
-        let link_id = self.conn.last_insert_rowid();
-        for query in parsed.query_pairs() {
-            queries::insert_query(&self.conn, &query.0, &query.1, link_id)?;
-        }
-
-        Ok(())
-    }
-
     pub fn update_server(&self, server_id: u64, name: &Option<String>) -> Result<()> {
-        let mut stmt = self.conn.prepare_cached(
+        let conn = self.conn.borrow();
+        let mut stmt = conn.prepare_cached(
             "INSERT INTO server (id, name) VALUES ( ?1, ?2 )
             ON CONFLICT(id) DO UPDATE SET name=excluded.name
             WHERE (server.name IS NULL AND excluded.name IS NOT NULL)",
@@ -107,12 +66,13 @@ impl DB {
 
                 Ok(())
             }
-            Err(why) => Err(why),
+            Err(why) => Err(Error::from(why)),
         }
     }
 
     pub fn update_channel(&self, channel_id: u64, server_id: u64, name: String) -> Result<()> {
-        let mut stmt = self.conn.prepare(
+        let conn = self.conn.borrow();
+        let mut stmt = conn.prepare(
             "INSERT INTO channel (id, name, server) VALUES ( ?1, ?2, ?3 )
             ON CONFLICT(id) DO NOTHING",
         )?;
@@ -125,17 +85,39 @@ impl DB {
 
                 Ok(())
             }
-            Err(why) => Err(why),
+            Err(why) => Err(Error::from(why)),
         }
     }
 
-    pub fn add_message(&self, message_id: u64, channel_id: u64, server_id: u64) -> Result<bool> {
-        let mut stmt = self.conn.prepare(
-            "INSERT INTO message (id, server, channel) VALUES ( ?1, ?2, ?3 )
+    pub fn get_oldest_message(&self, channel_id: u64) -> Result<Option<u64>> {
+        let conn = self.conn.borrow();
+        let ret = conn.query_row(
+            "SELECT id FROM message WHERE channel=(?1) ORDER BY created_at asc LIMIT 1",
+            [channel_id],
+            |row| row.get(0),
+        )?;
+
+        Ok(ret)
+    }
+
+    pub fn add_message(
+        &self,
+        message_id: MessageId,
+        channel_id: u64,
+        server_id: u64,
+    ) -> Result<bool> {
+        let conn = self.conn.borrow();
+        let mut stmt = conn.prepare(
+            "INSERT INTO message (id, server, channel, created_at) VALUES ( ?1, ?2, ?3, ?4 )
             ON CONFLICT(id) DO NOTHING",
         )?;
 
-        match stmt.execute(params![message_id, server_id, channel_id]) {
+        match stmt.execute(params![
+            *message_id.as_u64(),
+            server_id,
+            channel_id,
+            message_id.created_at()
+        ]) {
             Ok(cnt) => {
                 if cnt > 0 {
                     println!("Added message_id {} db", message_id);
@@ -144,17 +126,43 @@ impl DB {
                     Ok(false)
                 }
             }
-            Err(why) => Err(why),
+            Err(why) => Err(Error::from(why)),
         }
     }
 
+    pub fn insert_link(&self, link: &str, message_id: u64) -> Result<()> {
+        println!("Inserting the following link {:?}", link);
+
+        let mut conn = self.conn.borrow_mut();
+        let tx = conn.transaction()?;
+        tx.execute(
+            "INSERT INTO link (link) VALUES (?1) ON CONFLICT(link) DO NOTHING;",
+            [link],
+        )?;
+        tx.execute(
+            "INSERT INTO message_link (link, message) 
+            VALUES (
+                (SELECT id FROM link WHERE link=(?1)), 
+                ?2
+            );",
+            params![link, message_id],
+        )?;
+
+        tx.commit()?;
+
+        Ok(())
+    }
+
     pub fn query_links(&self, link: &str, server: u64) -> Result<Vec<Link>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT L.id, L.link, L.server, L.channel, L.message, C.name, S.name
+        let conn = self.conn.borrow();
+        let mut stmt = conn.prepare(
+            "SELECT L.id, L.link, S.id, C.id, M.id, C.name, S.name
             FROM link AS L 
-            JOIN channel AS C ON L.channel=C.id
-            JOIN server AS S ON L.server=S.id
-            WHERE L.link = (?1) AND L.server = (?2);",
+            JOIN message_link as ML on ML.link=L.id
+            JOIN message as M on ML.message=M.id
+            JOIN channel AS C ON M.channel=C.id
+            JOIN server AS S ON M.server=S.id
+            WHERE L.link = (?1) AND S.id = (?2);",
         )?;
         let rows = stmt.query_map(params![link, server], |row| {
             Ok(Link {
@@ -177,59 +185,34 @@ impl DB {
         Ok(links)
     }
 
-    pub fn query_links_host_path_fields(
-        &self,
-        host: &str,
-        path: &str,
-        server: u64,
-        fields: &Vec<String>,
-    ) -> Result<Vec<Link>> {
-        // If there are no fields, no point in spending time on the logic
-        if fields.len() == 0 {
-            return queries::query_links_on_host_path(&self.conn, host, path, server);
-        }
-
-        let mut stmt = self.conn.prepare(
-            "SELECT L.id, Q.field
-            FROM
-            ( SELECT id, link
-               FROM link 
-               WHERE host=(?1) AND path=(?2) AND server=(?3) 
-            ) as L
-            JOIN query AS Q on Q.link = L.id
-            WHERE Q.field IN rarray(?4);",
+    pub fn get_repost_list(&self, server_id: u64) -> Result<Vec<RepostCount>> {
+        let conn = self.conn.borrow();
+        let mut stmt = conn.prepare(
+            "SELECT L.link, LM.link_count 
+            FROM link as L JOIN (
+                SELECT ML.link, COUNT(1) as link_count
+                FROM message_link as ML 
+                JOIN message as M on ML.message=M.id
+                WHERE M.server=(?1)
+                GROUP BY link
+                HAVING link_count > 1 
+            ) as LM on L.id=LM.link
+            ORDER BY link_count desc
+            LIMIT 10",
         )?;
 
-        let arr = Rc::new(
-            fields
-                .iter()
-                .cloned()
-                .map(Value::from)
-                .collect::<Vec<Value>>(),
-        );
-        let rows = stmt.query_map(params![host, path, server, arr], |row| {
-            Ok(QueryParam {
-                link_id: row.get(0)?,
-                field: row.get(1)?,
-                ..Default::default()
+        let rows = stmt.query_map(params![server_id], |row| {
+            Ok(RepostCount {
+                link: row.get(0)?,
+                count: row.get(1)?,
             })
         })?;
 
-        let mut field_map: HashMap<i64, HashSet<String>> = HashMap::new();
-        for row in rows {
-            let r = row?;
-            if !field_map.contains_key(&r.link_id) {
-                field_map.insert(r.link_id, HashSet::new());
-            }
+        let mut reposts = Vec::new();
+        for repost in rows {
+            reposts.push(repost?)
+        }
 
-            field_map.get_mut(&r.link_id).unwrap().insert(r.field);
-        }
-        let mut ids = Vec::new();
-        for (id, set) in field_map {
-            if set.len() == fields.len() {
-                ids.push(id);
-            }
-        }
-        queries::query_links_on_id_vector(&self.conn, &ids)
+        Ok(reposts)
     }
 }

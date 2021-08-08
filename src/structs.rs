@@ -11,3 +11,9 @@ pub struct Link {
     pub channel_name: Option<String>,
     pub server_name: Option<String>,
 }
+
+#[derive(Debug, Default)]
+pub struct RepostCount {
+    pub link: String,
+    pub count: u64,
+}
