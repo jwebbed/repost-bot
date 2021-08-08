@@ -85,14 +85,35 @@ fn filter_field(host: &str, field: &str) -> bool {
     host_match || GENERIC_FIELDS.contains(&field)
 }
 
+fn transform_url(url: Url) -> Result<Url> {
+    let ret = if url.host_str().is_some() {
+        match url.host_str().unwrap() {
+            "youtu.be" => {
+                let path = url.path();
+                if path.len() > 1 {
+                    let expanded_url =
+                        format!("https://www.youtube.com/watch?v={}", &path[1..path.len()]);
+                    Some(Url::parse(&expanded_url)?)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    } else {
+        None
+    };
+
+    match ret {
+        Some(value) => Ok(value),
+        None => Ok(url),
+    }
+}
+
 /// filtered_url takes a url_str and returns a Url object with the any irrelevent
 /// fields in the query string removed as per filter_field
 fn filtered_url(url_str: &str) -> Result<Url> {
-    let mut url = match Url::parse(url_str) {
-        Ok(url) => Ok(url),
-        Err(_) => Err(rusqlite::Error::QueryReturnedNoRows),
-    }?;
-
+    let mut url = transform_url(Url::parse(url_str)?)?;
     let host = url.host_str().ok_or(rusqlite::Error::QueryReturnedNoRows)?;
 
     let fields = url
@@ -251,6 +272,16 @@ mod tests {
             "https://twitter.com/user/status/idnumber"
         );
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_youtube_sl() -> Result<()> {
+        let url = Url::parse("https://youtu.be/fakeid")?;
+        assert_eq!(
+            transform_url(url)?.as_str(),
+            "https://www.youtube.com/watch?v=fakeid"
+        );
         Ok(())
     }
 }
