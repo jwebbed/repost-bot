@@ -113,11 +113,7 @@ fn transform_url(url: Url) -> Result<Url> {
 /// filtered_url takes a url_str and returns a Url object with the any irrelevent
 /// fields in the query string removed as per filter_field
 fn filtered_url(url_str: &str) -> Result<Url> {
-    let mut url = transform_url(Url::parse(url_str)?)?; /* {
-                                                            Ok(url) => Ok(url),
-                                                            Err(_) => Err(rusqlite::Error::QueryReturnedNoRows),
-                                                        }?;*/
-
+    let mut url = transform_url(Url::parse(url_str)?)?;
     let host = url.host_str().ok_or(rusqlite::Error::QueryReturnedNoRows)?;
 
     let fields = url
@@ -286,9 +282,6 @@ mod tests {
             transform_url(url)?.as_str(),
             "https://www.youtube.com/watch?v=fakeid"
         );
-        //https://www.youtube.com/watch?v=fakeid
-        //https://youtu.be/fakeid
-
         Ok(())
     }
 }
