@@ -27,4 +27,4 @@ features = ["macros", "rt-multi-thread"]
 
 [dependencies.rusqlite]
 version = "0.25.3"
-features = ["bundled", "time", "chrono"]
+features = ["bundled", "chrono"]

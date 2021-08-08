@@ -49,11 +49,7 @@ impl Handler {
                     *msg.channel_id.as_u64(),
                     *msg.guild_id.unwrap().as_u64(),
                 )? {
-                    println!("processing message {}", msg.id.as_u64());
-                    let reposts = self.store_links_and_get_reposts(&msg);
-                    if reposts.len() > 0 {
-                        println!("found reposts on old message {:?}", reposts)
-                    }
+                    self.store_links_and_get_reposts(&msg);
                 } else {
                     println!("message {} already processed", msg.id.as_u64());
                 }

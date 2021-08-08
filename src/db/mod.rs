@@ -2,7 +2,7 @@ mod migrations;
 mod queries;
 
 use crate::errors::{Error, Result};
-use crate::structs::Link;
+use crate::structs::{Link, RepostCount};
 use rusqlite::{params, Connection};
 use serenity::model::id::MessageId;
 use std::cell::RefCell;
@@ -183,5 +183,36 @@ impl DB {
         }
 
         Ok(links)
+    }
+
+    pub fn get_repost_list(&self, server_id: u64) -> Result<Vec<RepostCount>> {
+        let conn = self.conn.borrow();
+        let mut stmt = conn.prepare(
+            "SELECT L.link, LM.link_count 
+            FROM link as L JOIN (
+                SELECT ML.link, COUNT(1) as link_count
+                FROM message_link as ML 
+                JOIN message as M on ML.message=M.id
+                WHERE M.server=(?1)
+                GROUP BY link
+                HAVING link_count > 1 
+            ) as LM on L.id=LM.link
+            ORDER BY link_count desc
+            LIMIT 10",
+        )?;
+
+        let rows = stmt.query_map(params![server_id], |row| {
+            Ok(RepostCount {
+                link: row.get(0)?,
+                count: row.get(1)?,
+            })
+        })?;
+
+        let mut reposts = Vec::new();
+        for repost in rows {
+            reposts.push(repost?)
+        }
+
+        Ok(reposts)
     }
 }
