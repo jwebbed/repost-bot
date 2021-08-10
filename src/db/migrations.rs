@@ -41,6 +41,23 @@ const MIGRATION_1: [&str; 6] = [
     "CREATE UNIQUE INDEX idx_message_link ON message_link (link, message);",
 ];
 
+const MIGRATION_2: [&str; 3] = [
+    "CREATE TABLE user ( 
+        id INTEGER PRIMARY KEY, 
+        name TEXT
+    );",
+    "ALTER TABLE message ADD user INTEGER NULL DEFAULT NULL REFERENCES user(id);",
+    "CREATE INDEX idx_message_server ON message (server);",
+];
+
+fn migration_2(conn: &Connection) -> Result<()> {
+    for migration in MIGRATION_2 {
+        conn.execute(migration, [])?;
+    }
+    queries::set_version(&conn, 1)?;
+    Ok(())
+}
+
 fn migration_1(conn: &Connection) -> Result<()> {
     for migration in MIGRATION_1 {
         conn.execute(migration, [])?;
@@ -51,7 +68,7 @@ fn migration_1(conn: &Connection) -> Result<()> {
 
 pub fn migrate(conn: &mut Connection) -> Result<()> {
     // be sure to increment this everytime a new migration is added
-    const FINAL_VER: u32 = 1;
+    const FINAL_VER: u32 = 2;
 
     let ver = queries::get_version(&conn)?;
 
@@ -66,6 +83,10 @@ pub fn migrate(conn: &mut Connection) -> Result<()> {
     let tx = conn.transaction()?;
     if ver < 1 {
         migration_1(&tx)?;
+    }
+
+    if ver < 2 {
+        migration_2(&tx)?;
     }
 
     tx.commit()?;
