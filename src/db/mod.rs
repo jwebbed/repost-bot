@@ -4,7 +4,7 @@ mod queries;
 use crate::errors::{Error, Result};
 use crate::structs::{Link, RepostCount};
 use rusqlite::{params, Connection};
-use serenity::model::id::MessageId;
+use serenity::model::id::{GuildId, MessageId, UserId};
 use std::cell::RefCell;
 
 pub struct DB {
@@ -89,6 +89,17 @@ impl DB {
         }
     }
 
+    pub fn update_user(&self, user_id: UserId, server_id: GuildId, name: &str) -> Result<()> {
+        let conn = self.conn.borrow();
+        let mut stmt = conn.prepare(
+            "INSERT INTO user (discord_id, server, name) VALUES ( ?1, ?2, ?3 )
+            ON CONFLICT(id) DO NOTHING",
+        )?;
+
+        stmt.execute(params![*user_id.as_u64(), *server_id.as_u64(), name])?;
+        Ok(())
+    }
+
     pub fn get_oldest_message(&self, channel_id: u64) -> Result<Option<u64>> {
         let conn = self.conn.borrow();
         let ret = conn.query_row(
@@ -105,17 +116,20 @@ impl DB {
         message_id: MessageId,
         channel_id: u64,
         server_id: u64,
+        user_id: UserId,
     ) -> Result<bool> {
         let conn = self.conn.borrow();
         let mut stmt = conn.prepare(
-            "INSERT INTO message (id, server, channel, created_at) VALUES ( ?1, ?2, ?3, ?4 )
-            ON CONFLICT(id) DO NOTHING",
+            "INSERT INTO message (id, server, channel, user, created_at) VALUES ( ?1, ?2, ?3, ?4, ?5 )
+            ON CONFLICT(id) DO UPDATE SET user=excluded.user
+            WHERE message.user IS NULL",
         )?;
 
         match stmt.execute(params![
             *message_id.as_u64(),
             server_id,
             channel_id,
+            *user_id.as_u64(),
             message_id.created_at()
         ]) {
             Ok(cnt) => {

@@ -44,10 +44,15 @@ impl Handler {
                 if msg.guild_id.is_none() {
                     msg.guild_id = Some(GuildId(server_id));
                 }
+                log_error(
+                    db.update_user(msg.author.id, msg.guild_id.unwrap(), &msg.author.name),
+                    "Db update user",
+                );
                 if db.add_message(
                     msg.id,
                     *msg.channel_id.as_u64(),
                     *msg.guild_id.unwrap().as_u64(),
+                    msg.author.id,
                 )? {
                     self.store_links_and_get_reposts(&msg);
                 } else {
@@ -96,6 +101,11 @@ impl EventHandler for Handler {
             "Db update server",
         );
 
+        log_error(
+            db.update_user(msg.author.id, server, &msg.author.name),
+            "Db update user",
+        );
+
         // get channel id and load message
         let channel_id = *msg.channel_id.as_u64();
         let channel_name = msg.channel_id.name(&ctx.cache).await;
@@ -105,7 +115,7 @@ impl EventHandler for Handler {
         );
 
         log_error(
-            db.add_message(msg.id, channel_id, server_id),
+            db.add_message(msg.id, channel_id, server_id, msg.author.id),
             "Db add message",
         );
 

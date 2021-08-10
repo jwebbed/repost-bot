@@ -15,6 +15,7 @@ pub enum Error {
     Serenity(serenity::Error),
     Rusqlite(rusqlite::Error),
     Url(url::ParseError),
+    Internal(String),
 }
 
 impl Display for Error {
@@ -23,6 +24,7 @@ impl Display for Error {
             Error::Serenity(inner) => fmt::Display::fmt(&inner, f),
             Error::Rusqlite(inner) => fmt::Display::fmt(&inner, f),
             Error::Url(inner) => fmt::Display::fmt(&inner, f),
+            Error::Internal(inner) => f.write_str(&inner),
         }
     }
 }

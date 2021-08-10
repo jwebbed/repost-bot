@@ -41,12 +41,15 @@ const MIGRATION_1: [&str; 6] = [
     "CREATE UNIQUE INDEX idx_message_link ON message_link (link, message);",
 ];
 
-const MIGRATION_2: [&str; 3] = [
+const MIGRATION_2: [&str; 4] = [
     "CREATE TABLE user ( 
-        id INTEGER PRIMARY KEY, 
+        id INTEGER PRIMARY KEY,
+        discord_id INTEGER NOT NULL,
+        server INTEGER NOT NULL,
         name TEXT
     );",
-    "ALTER TABLE message ADD user INTEGER NULL DEFAULT NULL REFERENCES user(id);",
+    "CREATE UNIQUE INDEX idx_user_discord_id ON user (discord_id, server);",
+    "ALTER TABLE message ADD user INTEGER NULL DEFAULT NULL",
     "CREATE INDEX idx_message_server ON message (server);",
 ];
 
@@ -54,7 +57,7 @@ fn migration_2(conn: &Connection) -> Result<()> {
     for migration in MIGRATION_2 {
         conn.execute(migration, [])?;
     }
-    queries::set_version(&conn, 1)?;
+    queries::set_version(&conn, 2)?;
     Ok(())
 }
 
