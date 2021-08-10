@@ -22,20 +22,7 @@ pub fn log_error<T>(r: Result<T>, label: &str) {
     }
 }
 impl Handler {
-    async fn process_old_messages(
-        &self,
-        http: &Http,
-        channel_id: u64,
-        server_id: u64,
-    ) -> Result<()> {
-        const LIMIT: u64 = 50;
-        let db = DB::get_db()?;
-        let query = match db.get_oldest_message(channel_id)? {
-            Some(value) => format!("?limit={}&before={}", LIMIT, value),
-            None => format!("?limit={}", LIMIT),
-        };
-
-        let messages = http.get_messages(channel_id, &query).await?;
+    fn process_messages(&self, messages: Vec<Message>, server_id: u64, db: &DB) -> Result<()> {
         if messages.len() > 0 {
             for mut msg in messages {
                 if msg.author.bot {
@@ -64,6 +51,46 @@ impl Handler {
         }
 
         Ok(())
+    }
+
+    async fn process_old_messages(
+        &self,
+        http: &Http,
+        channel_id: u64,
+        server_id: u64,
+    ) -> Result<()> {
+        const LIMIT: u64 = 50;
+        let db = DB::get_db()?;
+        let query = match db.get_oldest_message(channel_id)? {
+            Some(value) => format!("?limit={}&before={}", LIMIT, value),
+            None => format!("?limit={}", LIMIT),
+        };
+
+        let messages = http.get_messages(channel_id, &query).await?;
+        self.process_messages(messages, server_id, &db)
+    }
+
+    async fn process_null_messages(
+        &self,
+        http: &Http,
+        channel_id: u64,
+        server_id: u64,
+    ) -> Result<()> {
+        const LIMIT: u64 = 50;
+        let db = DB::get_db()?;
+        let msg_id = db.get_null_user_message(channel_id)?;
+        if msg_id.is_some() {
+            println!("processing null msg around {}", msg_id.unwrap());
+            let messages = http
+                .get_messages(
+                    channel_id,
+                    &format!("?limit={}&around={}", LIMIT, msg_id.unwrap()),
+                )
+                .await?;
+            self.process_messages(messages, server_id, &db)
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -125,6 +152,11 @@ impl EventHandler for Handler {
                 self.process_old_messages(&ctx.http, channel_id, server_id)
                     .await,
                 "Process old messages",
+            );
+            log_error(
+                self.process_null_messages(&ctx.http, channel_id, server_id)
+                    .await,
+                "Process null messages",
             );
         }
     }

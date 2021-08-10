@@ -93,7 +93,7 @@ impl DB {
         let conn = self.conn.borrow();
         let mut stmt = conn.prepare(
             "INSERT INTO user (discord_id, server, name) VALUES ( ?1, ?2, ?3 )
-            ON CONFLICT(id) DO NOTHING",
+            ON CONFLICT DO NOTHING",
         )?;
 
         stmt.execute(params![*user_id.as_u64(), *server_id.as_u64(), name])?;
@@ -104,6 +104,17 @@ impl DB {
         let conn = self.conn.borrow();
         let ret = conn.query_row(
             "SELECT id FROM message WHERE channel=(?1) ORDER BY created_at asc LIMIT 1",
+            [channel_id],
+            |row| row.get(0),
+        )?;
+
+        Ok(ret)
+    }
+
+    pub fn get_null_user_message(&self, channel_id: u64) -> Result<Option<u64>> {
+        let conn = self.conn.borrow();
+        let ret = conn.query_row(
+            "SELECT id FROM message WHERE channel=(?1) AND user IS NULL LIMIT 1",
             [channel_id],
             |row| row.get(0),
         )?;
@@ -156,9 +167,9 @@ impl DB {
         tx.execute(
             "INSERT INTO message_link (link, message) 
             VALUES (
-                (SELECT id FROM link WHERE link=(?1)), 
-                ?2
-            );",
+                (SELECT id FROM link WHERE link=(?1)), ?2
+            )
+            ON CONFLICT DO NOTHING;",
             params![link, message_id],
         )?;
 
