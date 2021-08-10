@@ -190,14 +190,17 @@ impl DB {
         let mut stmt = conn.prepare(
             "SELECT L.link, LM.link_count 
             FROM link as L JOIN (
-                SELECT ML.link, COUNT(1) as link_count
+                SELECT 
+                    ML.link, 
+                    COUNT(1) as link_count,
+                    MAX(M.created_at) as most_recent 
                 FROM message_link as ML 
                 JOIN message as M on ML.message=M.id
                 WHERE M.server=(?1)
                 GROUP BY link
                 HAVING link_count > 1 
             ) as LM on L.id=LM.link
-            ORDER BY link_count desc
+            ORDER BY link_count desc, most_recent desc
             LIMIT 10",
         )?;
 
