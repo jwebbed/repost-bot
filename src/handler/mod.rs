@@ -1,7 +1,7 @@
 mod commands;
 mod links;
 
-use crate::errors::Result;
+use crate::errors::{Error, Result};
 use serenity::{
     async_trait,
     http::Http,
@@ -22,23 +22,24 @@ pub fn log_error<T>(r: Result<T>, label: &str) {
     }
 }
 impl Handler {
-    fn process_messages(&self, messages: Vec<Message>, server_id: u64, db: &DB) -> Result<()> {
+    fn process_messages(&self, messages: Vec<Message>, db: &DB) -> Result<()> {
         if messages.len() > 0 {
-            for mut msg in messages {
+            for msg in messages {
                 if msg.author.bot {
                     continue;
                 }
-                if msg.guild_id.is_none() {
-                    msg.guild_id = Some(GuildId(server_id));
-                }
+
+                let server_id = msg.guild_id.ok_or(Error::Internal(
+                    "Guild/Server id required to be set on msg for processing".to_string(),
+                ))?;
                 log_error(
-                    db.update_user(msg.author.id, msg.guild_id.unwrap(), &msg.author.name),
+                    db.update_user(msg.author.id, server_id, &msg.author.name),
                     "Db update user",
                 );
                 if db.add_message(
                     msg.id,
                     *msg.channel_id.as_u64(),
-                    *msg.guild_id.unwrap().as_u64(),
+                    *server_id.as_u64(),
                     msg.author.id,
                 )? {
                     self.store_links_and_get_reposts(&msg);
@@ -51,6 +52,26 @@ impl Handler {
         }
 
         Ok(())
+    }
+
+    async fn get_channel_messages_with_query(
+        &self,
+        http: &Http,
+        channel_id: u64,
+        server_id: u64,
+        query: &str,
+    ) -> Result<Vec<Message>> {
+        Ok(http
+            .get_messages(channel_id, query)
+            .await?
+            .into_iter()
+            .map(|mut msg| {
+                if msg.guild_id.is_none() {
+                    msg.guild_id = Some(GuildId(server_id));
+                };
+                msg
+            })
+            .collect())
     }
 
     async fn process_old_messages(
@@ -66,8 +87,11 @@ impl Handler {
             None => format!("?limit={}", LIMIT),
         };
 
-        let messages = http.get_messages(channel_id, &query).await?;
-        self.process_messages(messages, server_id, &db)
+        self.process_messages(
+            self.get_channel_messages_with_query(http, channel_id, server_id, &query)
+                .await?,
+            &db,
+        )
     }
 
     async fn process_null_messages(
@@ -81,13 +105,16 @@ impl Handler {
         let msg_id = db.get_null_user_message(channel_id)?;
         if msg_id.is_some() {
             println!("processing null msg around {}", msg_id.unwrap());
-            let messages = http
-                .get_messages(
+            self.process_messages(
+                self.get_channel_messages_with_query(
+                    http,
                     channel_id,
+                    server_id,
                     &format!("?limit={}&around={}", LIMIT, msg_id.unwrap()),
                 )
-                .await?;
-            self.process_messages(messages, server_id, &db)
+                .await?,
+                &db,
+            )
         } else {
             Ok(())
         }
