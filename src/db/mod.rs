@@ -74,7 +74,8 @@ impl DB {
         let conn = self.conn.borrow();
         let mut stmt = conn.prepare(
             "INSERT INTO channel (id, name, server) VALUES ( ?1, ?2, ?3 )
-            ON CONFLICT(id) DO NOTHING",
+            ON CONFLICT(id) DO UPDATE SET name=excluded.name
+            WHERE (channel.name != excluded.name)",
         )?;
 
         match stmt.execute(params![channel_id, name, server_id]) {
