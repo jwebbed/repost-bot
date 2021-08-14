@@ -6,11 +6,11 @@ use serenity::{
     async_trait,
     http::Http,
     model::{
-        channel::Message,
-        channel::MessageType,
+        channel::{Channel, Message, MessageType},
         gateway::Ready,
         guild::GuildStatus,
         id::{ChannelId, GuildId, MessageId},
+        permissions::Permissions,
     },
     prelude::*,
 };
@@ -151,6 +151,35 @@ impl EventHandler for Handler {
         };
     }
 
+    async fn channel_update(&self, ctx: Context, _old: Option<Channel>, new: Channel) {
+        match new.guild() {
+            Some(channel) => {
+                let current_user_id = ctx.cache.current_user().await.id;
+                if let Ok(permissions) = channel
+                    .permissions_for_user(&ctx.cache, current_user_id)
+                    .await
+                {
+                    println!(
+                        "current user has the following permissions {:?}",
+                        permissions
+                    );
+
+                    log_error(
+                        DB::db_call(|db| {
+                            db.update_channel_visibility(
+                                channel.id,
+                                permissions.contains(Permissions::READ_MESSAGES),
+                            )
+                        }),
+                        "Updating visibility",
+                    );
+                }
+            }
+            None => {
+                println!("It's not a guild!");
+            }
+        }
+    }
     async fn ready(&self, _: Context, ready: Ready) {
         println!("{} is connected!", ready.user.name);
         let db = match DB::get_db() {

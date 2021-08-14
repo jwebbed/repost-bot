@@ -49,9 +49,19 @@ fn migration_1(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+const MIGRATION_2: [&str; 1] = ["ALTER TABLE channel ADD visible BOOLEAN DEFAULT TRUE;"];
+
+fn migration_2(conn: &Connection) -> Result<()> {
+    for migration in MIGRATION_2 {
+        conn.execute(migration, [])?;
+    }
+    queries::set_version(&conn, 2)?;
+    Ok(())
+}
+
 pub fn migrate(conn: &mut Connection) -> Result<()> {
     // be sure to increment this everytime a new migration is added
-    const FINAL_VER: u32 = 1;
+    const FINAL_VER: u32 = 2;
 
     let ver = queries::get_version(&conn)?;
 
@@ -66,6 +76,9 @@ pub fn migrate(conn: &mut Connection) -> Result<()> {
     let tx = conn.transaction()?;
     if ver < 1 {
         migration_1(&tx)?;
+    }
+    if ver < 2 {
+        migration_2(&tx)?;
     }
 
     tx.commit()?;

@@ -4,7 +4,7 @@ mod queries;
 use crate::errors::{Error, Result};
 use crate::structs::{Link, RepostCount};
 use rusqlite::{params, Connection};
-use serenity::model::id::MessageId;
+use serenity::model::id::{ChannelId, MessageId};
 use std::cell::RefCell;
 
 pub struct DB {
@@ -150,6 +150,15 @@ impl DB {
         Ok(())
     }
 
+    pub fn update_channel_visibility(&self, channel_id: ChannelId, visible: bool) -> Result<()> {
+        let conn = self.conn.borrow();
+        conn.execute(
+            "UPDATE channel SET visible = (?1) WHERE id = (?2)",
+            params![visible, *channel_id.as_u64()],
+        )?;
+        Ok(())
+    }
+
     pub fn insert_link(&self, link: &str, message_id: u64) -> Result<()> {
         println!("Inserting the following link {:?}", link);
 
@@ -182,7 +191,10 @@ impl DB {
             JOIN message as M on ML.message=M.id
             JOIN channel AS C ON M.channel=C.id
             JOIN server AS S ON M.server=S.id
-            WHERE L.link = (?1) AND S.id = (?2);",
+            WHERE 
+                L.link = (?1)
+                AND S.id = (?2)
+                AND C.visible=TRUE;",
         )?;
         let rows = stmt.query_map(params![link, server], |row| {
             Ok(Link {
@@ -216,7 +228,8 @@ impl DB {
                     MAX(M.created_at) as most_recent 
                 FROM message_link as ML 
                 JOIN message as M on ML.message=M.id
-                WHERE M.server=(?1)
+                JOIN channel as C on M.channel=C.id
+                WHERE M.server=(?1) AND C.visible=TRUE
                 GROUP BY link
                 HAVING link_count > 1 
             ) as LM on L.id=LM.link
