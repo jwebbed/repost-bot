@@ -131,6 +131,25 @@ impl DB {
         }
     }
 
+    pub fn delete_message(&self, message_id: MessageId) -> Result<()> {
+        let mut conn = self.conn.borrow_mut();
+        let tx = conn.transaction()?;
+        // need to delete message link first as currently lacking on delete cascade
+        tx.execute(
+            "DELETE FROM message_link WHERE message = (?1)",
+            params![*message_id.as_u64()],
+        )?;
+
+        tx.execute(
+            "DELETE FROM message WHERE id = (?1)",
+            params![*message_id.as_u64()],
+        )?;
+
+        tx.commit()?;
+
+        Ok(())
+    }
+
     pub fn insert_link(&self, link: &str, message_id: u64) -> Result<()> {
         println!("Inserting the following link {:?}", link);
 

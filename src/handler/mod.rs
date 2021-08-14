@@ -6,7 +6,11 @@ use serenity::{
     async_trait,
     http::Http,
     model::{
-        channel::Message, channel::MessageType, gateway::Ready, guild::GuildStatus, id::GuildId,
+        channel::Message,
+        channel::MessageType,
+        gateway::Ready,
+        guild::GuildStatus,
+        id::{ChannelId, GuildId, MessageId},
     },
     prelude::*,
 };
@@ -117,6 +121,34 @@ impl EventHandler for Handler {
                 "Process old messages",
             );
         }
+    }
+
+    async fn message_delete(
+        &self,
+        _ctx: Context,
+        _channel_id: ChannelId,
+        message_id: MessageId,
+        _guild_id: Option<GuildId>,
+    ) {
+        let db = match DB::get_db() {
+            Ok(db) => db,
+            Err(why) => {
+                println!("Error getting db: {:?}", why);
+                return;
+            }
+        };
+
+        match db.delete_message(message_id) {
+            Ok(_) => println!(
+                "successfully deleted message id {} from db",
+                *message_id.as_u64()
+            ),
+            Err(why) => println!(
+                "failed to delete message id {} with following error {:?}",
+                message_id.as_u64(),
+                why
+            ),
+        };
     }
 
     async fn ready(&self, _: Context, ready: Ready) {
