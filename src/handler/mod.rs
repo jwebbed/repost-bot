@@ -6,7 +6,7 @@ use serenity::{
     async_trait,
     http::Http,
     model::{
-        channel::{Channel, Message, MessageType},
+        channel::{Channel, GuildChannel, Message, MessageType},
         gateway::Ready,
         guild::GuildStatus,
         id::{ChannelId, GuildId, MessageId},
@@ -104,7 +104,7 @@ impl EventHandler for Handler {
         let channel_id = *msg.channel_id.as_u64();
         let channel_name = msg.channel_id.name(&ctx.cache).await;
         log_error(
-            db.update_channel(channel_id, server_id, channel_name.unwrap()),
+            db.update_channel(channel_id, server_id, &channel_name.unwrap()),
             "Db update channel",
         );
 
@@ -149,6 +149,19 @@ impl EventHandler for Handler {
                 why
             ),
         };
+    }
+
+    async fn channel_create(&self, _ctx: Context, channel: &GuildChannel) {
+        log_error(
+            DB::db_call(|db| {
+                db.update_channel(
+                    *channel.id.as_u64(),
+                    *channel.guild_id.as_u64(),
+                    &channel.name,
+                )
+            }),
+            "Db update channel",
+        );
     }
 
     async fn channel_update(&self, ctx: Context, _old: Option<Channel>, new: Channel) {

@@ -70,7 +70,7 @@ impl DB {
         }
     }
 
-    pub fn update_channel(&self, channel_id: u64, server_id: u64, name: String) -> Result<()> {
+    pub fn update_channel(&self, channel_id: u64, server_id: u64, name: &str) -> Result<()> {
         let conn = self.conn.borrow();
         let mut stmt = conn.prepare(
             "INSERT INTO channel (id, name, server) VALUES ( ?1, ?2, ?3 )
