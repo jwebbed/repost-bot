@@ -4,7 +4,7 @@ mod queries;
 use crate::errors::{Error, Result};
 use crate::structs::{Link, RepostCount};
 use rusqlite::{params, Connection};
-use serenity::model::id::MessageId;
+use serenity::model::id::{ChannelId, MessageId};
 use std::cell::RefCell;
 
 pub struct DB {
@@ -70,26 +70,6 @@ impl DB {
         }
     }
 
-    pub fn update_channel(&self, channel_id: u64, server_id: u64, name: String) -> Result<()> {
-        let conn = self.conn.borrow();
-        let mut stmt = conn.prepare(
-            "INSERT INTO channel (id, name, server) VALUES ( ?1, ?2, ?3 )
-            ON CONFLICT(id) DO UPDATE SET name=excluded.name
-            WHERE (channel.name != excluded.name)",
-        )?;
-
-        match stmt.execute(params![channel_id, name, server_id]) {
-            Ok(cnt) => {
-                if cnt > 0 {
-                    println!("Added channel_id {} with name {} to db", channel_id, name);
-                };
-
-                Ok(())
-            }
-            Err(why) => Err(Error::from(why)),
-        }
-    }
-
     pub fn get_oldest_message(&self, channel_id: u64) -> Result<Option<u64>> {
         let conn = self.conn.borrow();
         let ret = conn.query_row(
@@ -131,6 +111,86 @@ impl DB {
         }
     }
 
+    pub fn delete_message(&self, message_id: MessageId) -> Result<()> {
+        let mut conn = self.conn.borrow_mut();
+        let tx = conn.transaction()?;
+        // need to delete message link first as currently lacking on delete cascade
+        tx.execute(
+            "DELETE FROM message_link WHERE message = (?1)",
+            params![*message_id.as_u64()],
+        )?;
+
+        tx.execute(
+            "DELETE FROM message WHERE id = (?1)",
+            params![*message_id.as_u64()],
+        )?;
+
+        tx.commit()?;
+
+        Ok(())
+    }
+
+    pub fn update_channel(
+        &self,
+        channel_id: u64,
+        server_id: u64,
+        name: &str,
+        visible: bool,
+    ) -> Result<()> {
+        let conn = self.conn.borrow();
+        let mut stmt = conn.prepare(
+            "INSERT INTO channel (id, name, server, visible) VALUES ( ?1, ?2, ?3, ?4 )
+            ON CONFLICT(id) DO UPDATE SET name=excluded.name
+            WHERE (channel.name != excluded.name)",
+        )?;
+
+        match stmt.execute(params![channel_id, name, server_id, visible]) {
+            Ok(cnt) => {
+                if cnt > 0 {
+                    println!("Added channel_id {} with name {} to db", channel_id, name);
+                };
+
+                Ok(())
+            }
+            Err(why) => Err(Error::from(why)),
+        }
+    }
+
+    pub fn update_channel_visibility(&self, channel_id: ChannelId, visible: bool) -> Result<()> {
+        let conn = self.conn.borrow();
+        conn.execute(
+            "UPDATE channel SET visible = (?1) WHERE id = (?2)",
+            params![visible, *channel_id.as_u64()],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_channel(&self, channel_id: ChannelId) -> Result<()> {
+        let mut conn = self.conn.borrow_mut();
+        let tx = conn.transaction()?;
+
+        tx.execute(
+            "DELETE FROM message_link WHERE message IN (
+                SELECT id FROM message WHERE channel = (?1)
+            )",
+            params![*channel_id.as_u64()],
+        )?;
+
+        tx.execute(
+            "DELETE FROM message WHERE channel = (?1)",
+            params![*channel_id.as_u64()],
+        )?;
+
+        tx.execute(
+            "DELETE FROM channel WHERE id = (?1)",
+            params![*channel_id.as_u64()],
+        )?;
+
+        tx.commit()?;
+
+        Ok(())
+    }
+
     pub fn insert_link(&self, link: &str, message_id: u64) -> Result<()> {
         println!("Inserting the following link {:?}", link);
 
@@ -163,7 +223,10 @@ impl DB {
             JOIN message as M on ML.message=M.id
             JOIN channel AS C ON M.channel=C.id
             JOIN server AS S ON M.server=S.id
-            WHERE L.link = (?1) AND S.id = (?2);",
+            WHERE 
+                L.link = (?1)
+                AND S.id = (?2)
+                AND C.visible=TRUE;",
         )?;
         let rows = stmt.query_map(params![link, server], |row| {
             Ok(Link {
@@ -197,7 +260,8 @@ impl DB {
                     MAX(M.created_at) as most_recent 
                 FROM message_link as ML 
                 JOIN message as M on ML.message=M.id
-                WHERE M.server=(?1)
+                JOIN channel as C on M.channel=C.id
+                WHERE M.server=(?1) AND C.visible=TRUE
                 GROUP BY link
                 HAVING link_count > 1 
             ) as LM on L.id=LM.link
