@@ -25,6 +25,18 @@ pub fn log_error<T>(r: Result<T>, label: &str) {
         Err(why) => println!("{} failed with error: {:?}", label, why),
     }
 }
+
+async fn bot_read_channel_permission(ctx: &Context, channel: &GuildChannel) -> bool {
+    let current_user_id = ctx.cache.current_user().await.id;
+    match channel
+        .permissions_for_user(&ctx.cache, current_user_id)
+        .await
+    {
+        Ok(permissions) => permissions.contains(Permissions::READ_MESSAGES),
+        Err(_why) => false,
+    }
+}
+
 impl Handler {
     async fn process_old_messages(
         &self,
@@ -103,8 +115,9 @@ impl EventHandler for Handler {
         // get channel id and load message
         let channel_id = *msg.channel_id.as_u64();
         let channel_name = msg.channel_id.name(&ctx.cache).await;
+        // can assume channel is visible if we are receiving messages for it
         log_error(
-            db.update_channel(channel_id, server_id, &channel_name.unwrap()),
+            db.update_channel(channel_id, server_id, &channel_name.unwrap(), true),
             "Db update channel",
         );
 
@@ -151,13 +164,15 @@ impl EventHandler for Handler {
         };
     }
 
-    async fn channel_create(&self, _ctx: Context, channel: &GuildChannel) {
+    async fn channel_create(&self, ctx: Context, channel: &GuildChannel) {
+        let visible = bot_read_channel_permission(&ctx, channel).await;
         log_error(
             DB::db_call(|db| {
                 db.update_channel(
                     *channel.id.as_u64(),
                     *channel.guild_id.as_u64(),
                     &channel.name,
+                    visible,
                 )
             }),
             "Db update channel",
@@ -167,32 +182,26 @@ impl EventHandler for Handler {
     async fn channel_update(&self, ctx: Context, _old: Option<Channel>, new: Channel) {
         match new.guild() {
             Some(channel) => {
-                let current_user_id = ctx.cache.current_user().await.id;
-                if let Ok(permissions) = channel
-                    .permissions_for_user(&ctx.cache, current_user_id)
-                    .await
-                {
-                    println!(
-                        "current user has the following permissions {:?}",
-                        permissions
-                    );
-
-                    log_error(
-                        DB::db_call(|db| {
-                            db.update_channel_visibility(
-                                channel.id,
-                                permissions.contains(Permissions::READ_MESSAGES),
-                            )
-                        }),
-                        "Updating visibility",
-                    );
-                }
+                let visible = bot_read_channel_permission(&ctx, &channel).await;
+                log_error(
+                    DB::db_call(|db| db.update_channel_visibility(channel.id, visible)),
+                    "Updating visibility",
+                );
             }
             None => {
                 println!("It's not a guild!");
             }
         }
     }
+
+    async fn channel_delete(&self, _ctx: Context, channel: &GuildChannel) {
+        println!("recieved channel delete for {:?}", channel);
+        log_error(
+            DB::db_call(|db| db.delete_channel(channel.id)),
+            "Db delete channel",
+        );
+    }
+
     async fn ready(&self, _: Context, ready: Ready) {
         println!("{} is connected!", ready.user.name);
         let db = match DB::get_db() {
