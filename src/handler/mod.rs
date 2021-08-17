@@ -6,14 +6,15 @@ use serenity::{
     async_trait,
     http::Http,
     model::{
-        channel::{Channel, GuildChannel, Message, MessageType},
+        channel::{Channel, ChannelType, GuildChannel, Message, MessageType},
         gateway::Ready,
-        guild::GuildStatus,
         id::{ChannelId, GuildId, MessageId},
         permissions::Permissions,
     },
     prelude::*,
 };
+use std::collections::HashSet;
+use std::iter::FromIterator;
 
 use crate::db::DB;
 
@@ -204,6 +205,9 @@ impl EventHandler for Handler {
 
     async fn ready(&self, _: Context, ready: Ready) {
         println!("{} is connected!", ready.user.name);
+    }
+
+    async fn cache_ready(&self, ctx: Context, guilds: Vec<GuildId>) {
         let db = match DB::get_db() {
             Ok(db) => db,
             Err(why) => {
@@ -211,19 +215,44 @@ impl EventHandler for Handler {
                 return;
             }
         };
+        for guild in guilds {
+            match guild.channels(&ctx.http).await {
+                Ok(channels) => {
+                    let channel_list = HashSet::<String>::from_iter(
+                        channels
+                            .into_iter()
+                            .filter(|channel| {
+                                channel.1.kind != ChannelType::Voice
+                                    && channel.1.kind != ChannelType::Category
+                            })
+                            .map(|channel| channel.1.name),
+                    );
+                    println!(
+                        "found server with id {} and channels {:?}",
+                        guild, channel_list
+                    );
 
-        for guild_id in ready.guilds {
-            log_error(
-                match guild_id {
-                    GuildStatus::OnlineGuild(g) => db.update_server(*g.id.as_u64(), &Some(g.name)),
-                    GuildStatus::OnlinePartialGuild(g) => {
-                        db.update_server(*g.id.as_u64(), &Some(g.name))
+                    let channels_stored = match db.get_channel_list(guild) {
+                        Ok(cs) => cs,
+                        Err(_why) => Vec::new(),
+                    };
+
+                    for (id, name) in channels_stored {
+                        if !channel_list.contains(&name) {
+                            println!(
+                                "stored channel {} no longer exists on server, deleting",
+                                name
+                            );
+                            log_error(db.delete_channel(id), "Db delete channel");
+                        }
                     }
-                    GuildStatus::Offline(g) => db.update_server(*g.id.as_u64(), &None),
-                    _ => Ok(()),
-                },
-                "db update server",
-            );
+                }
+                Err(why) => println!(
+                    "failed to load channels for guild {} with error {:?}",
+                    *guild.as_u64(),
+                    why
+                ),
+            }
         }
     }
 }
