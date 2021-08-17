@@ -4,7 +4,7 @@ mod queries;
 use crate::errors::{Error, Result};
 use crate::structs::{Link, RepostCount};
 use rusqlite::{params, Connection};
-use serenity::model::id::{ChannelId, MessageId};
+use serenity::model::id::{ChannelId, GuildId, MessageId};
 use std::cell::RefCell;
 
 pub struct DB {
@@ -189,6 +189,19 @@ impl DB {
         tx.commit()?;
 
         Ok(())
+    }
+
+    pub fn get_channel_list(&self, server_id: GuildId) -> Result<Vec<(ChannelId, String)>> {
+        let conn = self.conn.borrow();
+        let mut stmt = conn.prepare("SELECT id, name FROM channel where server = (?1)")?;
+        let rows = stmt.query_map(params![*server_id.as_u64()], |row| {
+            Ok((ChannelId(row.get(0)?), row.get(1)?))
+        })?;
+        let mut links = Vec::new();
+        for row in rows {
+            links.push(row?)
+        }
+        Ok(links)
     }
 
     pub fn insert_link(&self, link: &str, message_id: u64) -> Result<()> {
