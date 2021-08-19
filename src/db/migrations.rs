@@ -59,6 +59,19 @@ fn migration_2(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+fn delete_old_links(conn: &Connection) -> Result<()> {
+    conn.execute(
+        "DELETE FROM link WHERE id IN (
+            SELECT L.id FROM link as L 
+            LEFT JOIN message_link as ML 
+            ON L.id = ML.link 
+            WHERE ML.id IS NULL 
+        );",
+        [],
+    )?;
+    Ok(())
+}
+
 pub fn migrate(conn: &mut Connection) -> Result<()> {
     // be sure to increment this everytime a new migration is added
     const FINAL_VER: u32 = 2;
@@ -80,6 +93,9 @@ pub fn migrate(conn: &mut Connection) -> Result<()> {
     if ver < 2 {
         migration_2(&tx)?;
     }
+
+    // delete old links we don't need
+    delete_old_links(&tx)?;
 
     tx.commit()?;
 
