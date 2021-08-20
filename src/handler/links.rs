@@ -4,8 +4,10 @@ use crate::db::DB;
 use crate::errors::Result;
 use crate::structs::Link;
 
+use lazy_static::lazy_static;
 use linkify::{LinkFinder, LinkKind};
 use phf::phf_set;
+use regex::Regex;
 use serenity::{
     model::channel::Message,
     model::id::{ChannelId, GuildId, MessageId},
@@ -152,10 +154,22 @@ fn get_link_str(link: &Link) -> String {
     MessageId(link.message).link(ChannelId(link.channel), Some(GuildId(link.server)))
 }
 
+// returns true if the input string is a discord message link
+fn is_discord_link(text: &str) -> bool {
+    lazy_static! {
+        static ref RE: Regex = Regex::new(r"^https?://discord.com/channels/.*").unwrap();
+    }
+    RE.is_match(text)
+}
+
 fn get_links(msg: &str) -> Vec<String> {
     let mut finder = LinkFinder::new();
     finder.kinds(&[LinkKind::Url]);
-    finder.links(msg).map(|x| x.as_str().to_string()).collect()
+    finder
+        .links(msg)
+        .map(|x| x.as_str().to_string())
+        .filter(|link| !is_discord_link(link))
+        .collect()
 }
 
 impl Handler {
@@ -247,6 +261,20 @@ mod tests {
         assert_eq!(links.len(), 2);
         assert!(links.contains(&"https://twitter.com/user/status/idnumber?s=20".to_string()));
         assert!(links.contains(&"https://www.bbc.com/news/article".to_string()));
+    }
+
+    #[test]
+    fn test_ignore_discord_links() {
+        let links = get_links(
+            "test msg with link https://discord.com/channels/guild/channel/msg and
+            without the https http://discord.com/channels/guild/channel/msg
+             another link https://www.bbc.com/news/article
+             discord link but not a channel https://discord.com/developers/docs/intro",
+        );
+
+        assert_eq!(links.len(), 2);
+        assert!(links.contains(&"https://www.bbc.com/news/article".to_string()));
+        assert!(links.contains(&"https://discord.com/developers/docs/intro".to_string()));
     }
 
     #[test]
