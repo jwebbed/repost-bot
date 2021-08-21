@@ -112,21 +112,11 @@ impl DB {
     }
 
     pub fn delete_message(&self, message_id: MessageId) -> Result<()> {
-        let mut conn = self.conn.borrow_mut();
-        let tx = conn.transaction()?;
-        // need to delete message link first as currently lacking on delete cascade
-        tx.execute(
-            "DELETE FROM message_link WHERE message = (?1)",
-            params![*message_id.as_u64()],
-        )?;
-
-        tx.execute(
+        let conn = self.conn.borrow();
+        conn.execute(
             "DELETE FROM message WHERE id = (?1)",
             params![*message_id.as_u64()],
         )?;
-
-        tx.commit()?;
-
         Ok(())
     }
 
@@ -166,28 +156,11 @@ impl DB {
     }
 
     pub fn delete_channel(&self, channel_id: ChannelId) -> Result<()> {
-        let mut conn = self.conn.borrow_mut();
-        let tx = conn.transaction()?;
-
-        tx.execute(
-            "DELETE FROM message_link WHERE message IN (
-                SELECT id FROM message WHERE channel = (?1)
-            )",
-            params![*channel_id.as_u64()],
-        )?;
-
-        tx.execute(
-            "DELETE FROM message WHERE channel = (?1)",
-            params![*channel_id.as_u64()],
-        )?;
-
-        tx.execute(
+        let conn = self.conn.borrow();
+        conn.execute(
             "DELETE FROM channel WHERE id = (?1)",
             params![*channel_id.as_u64()],
         )?;
-
-        tx.commit()?;
-
         Ok(())
     }
 
