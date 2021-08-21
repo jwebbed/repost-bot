@@ -59,8 +59,8 @@ fn migration_2(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-const MIGRATION_3: [&str; 4] = [
-    // add channel table
+const MIGRATION_3: [&str; 13] = [
+    // add temp channel table
     "CREATE TABLE channel_temp ( 
         id INTEGER PRIMARY KEY, 
         name TEXT,
@@ -78,19 +78,41 @@ const MIGRATION_3: [&str; 4] = [
     );",
     // create message_link table to connect links and the messages they're posted in
     "CREATE TABLE message_link_temp (
-             id INTEGER PRIMARY KEY,
-             link INTEGER NOT NULL,
-             message INTEGER NOT NULL,
-             FOREIGN KEY(link) REFERENCES link(id),
-             FOREIGN KEY(message) REFERENCES message_temp(id) ON DELETE CASCADE
-         );",
+        id INTEGER PRIMARY KEY,
+        link INTEGER NOT NULL,
+        message INTEGER NOT NULL,
+        FOREIGN KEY(link) REFERENCES link(id) ON DELETE CASCADE,
+        FOREIGN KEY(message) REFERENCES message_temp(id) ON DELETE CASCADE
+    );",
+    // Insert old tables entries into new temp tables
     "INSERT INTO channel_temp (id, name, visible, server)
-    SELECT id, name, visible, server FROM channel"
-
+    SELECT id, name, visible, server FROM channel",
+    "INSERT INTO message_temp (id, server, channel, created_at)
+    SELECT id, server, channel, created_at FROM message",
+    "INSERT INTO message_link_temp (id, link, message)
+    SELECT id, link, message FROM message_link",
+    // Drop old message_link and rename temp
+    "DROP TABLE message_link",
+    "ALTER TABLE message_link_temp RENAME TO message_link",
+    // Drop old message and rename temp
+    "DROP TABLE message",
+    "ALTER TABLE message_temp RENAME TO message",
+    // Drop old channel and rename temp
+    "DROP TABLE channel",
+    "ALTER TABLE channel_temp RENAME TO channel",
     // add link table index
-    //"CREATE UNIQUE INDEX idx_message_link ON message_link (link, message);",
+    "CREATE UNIQUE INDEX idx_message_link ON message_link (link, message);",
 ];
 
+// This migration essentially re-does the basic tables, adding a ON DELETE CASCADE
+// to all of the foreign key relations so we don't have to do all this
+// stuff we manually deleting in reverse order.
+//
+// Less obviously it adds a ON DELETE CASCADE to the link relation in message_link,
+// which is odd as there is currently no place where we delete a link that has a
+// message link at the moment. This is primary for if we decide to remove some
+// links from the link table because we decided we want to filter them out,
+// we don't have to manually also remove this.
 fn migration_3(conn: &Connection) -> Result<()> {
     for migration in MIGRATION_3 {
         conn.execute(migration, [])?;
@@ -114,7 +136,7 @@ fn delete_old_links(conn: &Connection) -> Result<()> {
 
 pub fn migrate(conn: &mut Connection) -> Result<()> {
     // be sure to increment this everytime a new migration is added
-    const FINAL_VER: u32 = 2;
+    const FINAL_VER: u32 = 3;
 
     let ver = queries::get_version(&conn)?;
 
