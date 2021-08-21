@@ -114,7 +114,7 @@ fn transform_url(url: Url) -> Result<Url> {
 
 /// filtered_url takes a url_str and returns a Url object with the any irrelevent
 /// fields in the query string removed as per filter_field
-fn filtered_url(url_str: &str) -> Result<Url> {
+fn filtered_url(url_str: &String) -> Result<String> {
     let mut url = transform_url(Url::parse(url_str)?)?;
     let host = url.host_str().ok_or(rusqlite::Error::QueryReturnedNoRows)?;
 
@@ -139,7 +139,7 @@ fn filtered_url(url_str: &str) -> Result<Url> {
     }
 
     println!("Filtered url: {:?}", url);
-    Ok(url)
+    Ok(url.as_str().to_string())
 }
 
 fn query_link_matches(url_str: &str, server: u64) -> Result<Vec<Link>> {
@@ -162,14 +162,28 @@ fn is_discord_link(text: &str) -> bool {
     RE.is_match(text)
 }
 
+pub fn process_link_vector(links: &Vec<String>) -> Result<Vec<String>> {
+    links
+        .into_iter()
+        .filter(|link| !is_discord_link(link))
+        .map(filtered_url)
+        .collect()
+}
+
 fn get_links(msg: &str) -> Vec<String> {
     let mut finder = LinkFinder::new();
     finder.kinds(&[LinkKind::Url]);
-    finder
-        .links(msg)
-        .map(|x| x.as_str().to_string())
-        .filter(|link| !is_discord_link(link))
-        .collect()
+    let raw_links = finder.links(msg).map(|x| x.as_str().to_string()).collect();
+    match process_link_vector(&raw_links) {
+        Ok(links) => links,
+        Err(why) => {
+            println!(
+                "failed to process links with the following error: {:?}",
+                why
+            );
+            Vec::new()
+        }
+    }
 }
 
 impl Handler {
@@ -184,7 +198,7 @@ impl Handler {
                     continue;
                 }
             };
-            match query_link_matches(filtered_link.as_str(), server_id) {
+            match query_link_matches(&filtered_link, server_id) {
                 Ok(results) => {
                     println!("Found {} reposts: {:?}", results.len(), results);
                     for result in results {
@@ -198,7 +212,7 @@ impl Handler {
 
             // first need to insert into db
             log_error(
-                DB::db_call(|db| db.insert_link(filtered_link.as_str(), *msg.id.as_u64())),
+                DB::db_call(|db| db.insert_link(&filtered_link, *msg.id.as_u64())),
                 "Insert link",
             );
         }
@@ -274,7 +288,6 @@ mod tests {
 
         assert_eq!(links.len(), 2);
         assert!(links.contains(&"https://www.bbc.com/news/article".to_string()));
-        assert!(links.contains(&"https://discord.com/developers/docs/intro".to_string()));
     }
 
     #[test]
@@ -294,7 +307,7 @@ mod tests {
         assert_eq!(filter_field("www.youtube.com", "v"), false);
         assert_eq!(filter_field("twitter.com", "s"), true);
 
-        let filtered = filtered_url("https://twitter.com/user/status/idnumber?s=21")?;
+        let filtered = filtered_url(&"https://twitter.com/user/status/idnumber?s=21".to_string())?;
         assert_eq!(
             filtered.as_str(),
             "https://twitter.com/user/status/idnumber"
