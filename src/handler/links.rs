@@ -157,7 +157,7 @@ fn get_link_str(link: &Link) -> String {
 // returns true if the input string is a discord message link
 fn is_discord_link(text: &str) -> bool {
     lazy_static! {
-        static ref RE: Regex = Regex::new(r"^https?://discord.com/channels/.*").unwrap();
+        static ref RE: Regex = Regex::new(r"^https?://(discord\.com/channels|tenor\.com/view)/\S*").unwrap();
     }
     RE.is_match(text)
 }
@@ -268,6 +268,7 @@ mod tests {
         let links = get_links(
             "test msg with link https://discord.com/channels/guild/channel/msg and
             without the https http://discord.com/channels/guild/channel/msg
+            and also ignore tenor https://tenor.com/view/gif-name
              another link https://www.bbc.com/news/article
              discord link but not a channel https://discord.com/developers/docs/intro",
         );
