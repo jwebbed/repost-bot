@@ -18,7 +18,8 @@ use url::Url;
 // largely sourced from newhouse/url-tracking-stripper on github
 
 static TWITTER_FIELDS: phf::Set<&'static str> = phf_set! {
-    "s"
+    "s",
+    "t"
 };
 
 static GENERIC_FIELDS: phf::Set<&'static str> = phf_set! {
@@ -157,7 +158,8 @@ fn get_link_str(link: &Link) -> String {
 // returns true if the input string is a discord message link
 fn is_discord_link(text: &str) -> bool {
     lazy_static! {
-        static ref RE: Regex = Regex::new(r"^https?://(discord\.com/channels|tenor\.com/view)/\S*").unwrap();
+        static ref RE: Regex =
+            Regex::new(r"^https?://(discord\.com/channels|tenor\.com/view)/\S*").unwrap();
     }
     RE.is_match(text)
 }
