@@ -82,10 +82,10 @@ static GENERIC_FIELDS: phf::Set<&'static str> = phf_set! {
 #[inline(always)]
 fn filter_field(host: &str, field: &str) -> bool {
     let host_match = match host {
-        "twitter" | "twitter.com" => TWITTER_FIELDS.contains(&field),
+        "twitter" | "twitter.com" => TWITTER_FIELDS.contains(field),
         _ => false,
     };
-    host_match || GENERIC_FIELDS.contains(&field)
+    host_match || GENERIC_FIELDS.contains(field)
 }
 
 fn transform_url(url: Url) -> Result<Url> {
@@ -121,7 +121,7 @@ fn filtered_url(url_str: &str) -> Result<Url> {
 
     let fields = url
         .query_pairs()
-        .filter(|(field, _value)| !filter_field(host, &field))
+        .filter(|(field, _value)| !filter_field(host, field))
         .map(|(f, v)| (f.into_owned(), v.into_owned()))
         .collect::<Vec<(String, String)>>();
 
@@ -212,15 +212,15 @@ impl Handler {
         &self,
         ctx: &Context,
         msg: &Message,
-        reposts: &Vec<Link>,
+        reposts: &[Link],
     ) -> Result<()> {
-        if reposts.len() > 0 {
+        if !reposts.is_empty() {
             let repost_str = if reposts.len() > 1 {
                 format!(
                     "\n{}",
                     reposts
-                        .into_iter()
-                        .map(|x| get_link_str(&x))
+                        .iter()
+                        .map(|x| get_link_str(x))
                         .collect::<Vec<String>>()
                         .join("\n")
                 )
@@ -294,8 +294,8 @@ mod tests {
 
     #[test]
     fn test_filter_link() -> Result<()> {
-        assert_eq!(filter_field("www.youtube.com", "v"), false);
-        assert_eq!(filter_field("twitter.com", "s"), true);
+        assert!(!filter_field("www.youtube.com", "v"));
+        assert!(filter_field("twitter.com", "s"));
 
         let filtered = filtered_url("https://twitter.com/user/status/idnumber?s=21")?;
         assert_eq!(

@@ -11,9 +11,9 @@ impl Handler {
         }
 
         let command = &msg.content[4..].trim();
-        match command {
-            &"pins" => self.pins(ctx, msg).await,
-            &"reposts" => self.repost_cnt(ctx, msg).await,
+        match *command {
+            "pins" => self.pins(ctx, msg).await,
+            "reposts" => self.repost_cnt(ctx, msg).await,
             _ => println!("Received unknown command: \"{}\"", command),
         }
     }

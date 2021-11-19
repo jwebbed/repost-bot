@@ -45,7 +45,7 @@ fn migration_1(conn: &Connection) -> Result<()> {
     for migration in MIGRATION_1 {
         conn.execute(migration, [])?;
     }
-    queries::set_version(&conn, 1)?;
+    queries::set_version(conn, 1)?;
     Ok(())
 }
 
@@ -55,7 +55,7 @@ fn migration_2(conn: &Connection) -> Result<()> {
     for migration in MIGRATION_2 {
         conn.execute(migration, [])?;
     }
-    queries::set_version(&conn, 2)?;
+    queries::set_version(conn, 2)?;
     Ok(())
 }
 
@@ -117,7 +117,7 @@ fn migration_3(conn: &Connection) -> Result<()> {
     for migration in MIGRATION_3 {
         conn.execute(migration, [])?;
     }
-    queries::set_version(&conn, 3)?;
+    queries::set_version(conn, 3)?;
     Ok(())
 }
 
@@ -138,7 +138,7 @@ pub fn migrate(conn: &mut Connection) -> Result<()> {
     // be sure to increment this everytime a new migration is added
     const FINAL_VER: u32 = 3;
 
-    let ver = queries::get_version(&conn)?;
+    let ver = queries::get_version(conn)?;
 
     if ver == FINAL_VER {
         println!(
