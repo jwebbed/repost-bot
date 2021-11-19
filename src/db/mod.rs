@@ -223,7 +223,6 @@ impl DB {
                 message: row.get(4)?,
                 channel_name: row.get(5)?,
                 server_name: row.get(6)?,
-                ..Default::default()
             })
         })?;
 

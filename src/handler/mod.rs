@@ -53,7 +53,7 @@ impl Handler {
         };
 
         let messages = http.get_messages(channel_id, &query).await?;
-        if messages.len() > 0 {
+        if !messages.is_empty() {
             for mut msg in messages {
                 if msg.author.bot {
                     continue;
