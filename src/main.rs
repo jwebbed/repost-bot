@@ -1,3 +1,5 @@
+#![warn(clippy::cognitive_complexity)]
+
 mod db;
 mod errors;
 mod handler;
