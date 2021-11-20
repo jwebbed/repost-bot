@@ -1,4 +1,8 @@
-#![warn(clippy::cognitive_complexity)]
+#![warn(
+    clippy::cognitive_complexity,
+    clippy::missing_const_for_fn,
+    clippy::option_if_let_else
+)]
 
 mod db;
 mod errors;
