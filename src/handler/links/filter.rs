@@ -1,5 +1,6 @@
 use crate::errors::Result;
 
+use log::debug;
 use phf::phf_set;
 use url::Url;
 
@@ -127,7 +128,7 @@ pub fn filtered_url(url_str: &str) -> Result<Url> {
         url.set_query(None);
     }
 
-    println!("Filtered url: {:?}", url);
+    debug!("found filtered url {url:?}");
     Ok(url)
 }
 

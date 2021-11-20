@@ -5,6 +5,8 @@ mod wordle;
 use crate::errors::{Error, Result};
 use crate::structs;
 use crate::structs::reply::Reply;
+
+use log::{debug, error, info, trace, warn};
 use rand::random;
 use serenity::{
     async_trait,
@@ -27,7 +29,7 @@ pub struct Handler;
 pub fn log_error<T>(r: Result<T>, label: &str) {
     match r {
         Ok(_) => (),
-        Err(why) => println!("{label} failed with error: {why:?}"),
+        Err(why) => error!("{label} failed with error: {why:?}"),
     }
 }
 
@@ -56,6 +58,7 @@ impl Handler {
             None => {
                 // if there is nothing to query we really don't need to spam the api all the time
                 if random::<f64>() > 0.015 {
+                    trace!("random below threshold, not querying for new messages");
                     return Ok(());
                 }
                 format!("?limit={LIMIT}")
@@ -64,7 +67,7 @@ impl Handler {
 
         let messages = ctx.http.get_messages(channel_id, &query).await?;
         if !messages.is_empty() {
-            println!(
+            info!(
                 "received {} messages for channel id: {channel_id} and query_string {query}",
                 messages.len()
             );
@@ -76,14 +79,14 @@ impl Handler {
                     msg.guild_id = Some(GuildId(server_id));
                 }
                 if let Err(why) = self.process_message(ctx, &msg, false).await {
-                    println!(
+                    warn!(
                         "Failed to process old message {} with error {why:?}",
                         msg.id
                     );
                 }
             }
         } else {
-            println!("received no messages to process")
+            debug!("received no messages to process")
         }
 
         Ok(())
@@ -175,7 +178,7 @@ impl EventHandler for Handler {
             Ok(result) => {
                 if let Some(reply) = result {
                     if let Err(why) = reply.send(&ctx).await {
-                        println!("failed to send reply {why}");
+                        error!("failed to send reply {why}");
                     }
                 }
 
@@ -187,7 +190,7 @@ impl EventHandler for Handler {
                     );
                 }
             }
-            Err(why) => println!("Failed to process messsage: {why}"),
+            Err(why) => warn!("failed to process messsage: {why}"),
         }
     }
 
@@ -201,17 +204,17 @@ impl EventHandler for Handler {
         let db = match DB::get_db() {
             Ok(db) => db,
             Err(why) => {
-                println!("Error getting db: {why:?}");
+                error!("Error getting db: {why:?}");
                 return;
             }
         };
 
         match db.delete_message(message_id) {
-            Ok(_) => println!(
+            Ok(_) => info!(
                 "successfully deleted message id {} from db",
                 *message_id.as_u64()
             ),
-            Err(why) => println!(
+            Err(why) => error!(
                 "failed to delete message id {} with following error {:?}",
                 message_id.as_u64(),
                 why
@@ -244,13 +247,13 @@ impl EventHandler for Handler {
                 );
             }
             None => {
-                println!("It's not a guild!");
+                warn!("It's not a guild!");
             }
         }
     }
 
     async fn channel_delete(&self, _ctx: Context, channel: &GuildChannel) {
-        println!("recieved channel delete for {channel:?}");
+        trace!("recieved channel delete for {channel:?}");
         log_error(
             DB::db_call(|db| db.delete_channel(channel.id)),
             "Db delete channel",
@@ -266,7 +269,7 @@ impl EventHandler for Handler {
         let db = match DB::get_db() {
             Ok(db) => db,
             Err(why) => {
-                println!("Error getting db: {why:?}");
+                error!("Error getting db: {why:?}");
                 return;
             }
         };
@@ -277,27 +280,27 @@ impl EventHandler for Handler {
             new.user.bot,
             new.user.discriminator,
         ) {
-            println!("Error adding user: {why:?}");
+            error!("Error adding user: {why:?}");
             return;
         }
 
         if let Some(nickname) = new.nick {
             if let Err(why) = db.add_nickname(author_id, *new.guild_id.as_u64(), &nickname) {
-                println!("Error adding nickname: {why:?}");
+                error!("Error adding nickname: {why:?}");
                 return;
             }
         }
     }
 
     async fn ready(&self, _: Context, ready: Ready) {
-        println!("{} is connected!", ready.user.name);
+        info!("{} is connected!", ready.user.name);
     }
 
     async fn cache_ready(&self, ctx: Context, guilds: Vec<GuildId>) {
         let db = match DB::get_db() {
             Ok(db) => db,
             Err(why) => {
-                println!("Error getting db: {why:?}");
+                error!("Error getting db: {why:?}");
                 return;
             }
         };
@@ -318,7 +321,7 @@ impl EventHandler for Handler {
                         .map(|c| String::from(c.name.as_str()))
                         .collect::<Vec<String>>();
 
-                    println!("found server with id {guild} and channels {channel_list:?}");
+                    info!("found server with id {guild} and channels {channel_list:?}");
 
                     let channels_stored = match db.get_channel_list(guild) {
                         Ok(cs) => cs,
@@ -327,7 +330,7 @@ impl EventHandler for Handler {
 
                     for (id, name) in channels_stored {
                         if !channel_list.contains(&name) {
-                            println!(
+                            warn!(
                                 "stored channel {} no longer exists on server, deleting",
                                 name
                             );
@@ -351,17 +354,15 @@ impl EventHandler for Handler {
                                     );
                                 }
                             }
-                            Err(why) => println!(
-                                "failed to load most recent message for id {} {:?}",
-                                id, why
-                            ),
+                            Err(why) => {
+                                warn!("failed to load most recent message for id {id} {why:?}")
+                            }
                         }
                     }
                 }
-                Err(why) => println!(
-                    "failed to load channels for guild {} with error {:?}",
-                    *guild.as_u64(),
-                    why
+                Err(why) => error!(
+                    "failed to load channels for guild {} with error {why:?}",
+                    *guild.as_u64()
                 ),
             }
         }

@@ -1,5 +1,6 @@
 use super::queries;
 use crate::errors::Result;
+use log::{info, warn};
 use rusqlite::Connection;
 
 const MIGRATION_1: [&str; 6] = [
@@ -231,7 +232,7 @@ pub fn migrate(conn: &mut Connection) -> Result<()> {
     let ver = queries::get_version(conn)?;
 
     if ver == FINAL_VER {
-        println!(
+        info!(
             "database version {} which matches final ver {}, no need to migrate",
             ver, FINAL_VER
         );
@@ -260,7 +261,7 @@ pub fn migrate(conn: &mut Connection) -> Result<()> {
 
     tx.commit()?;
 
-    println!("migration successful");
+    warn!("migration successful");
     Ok(())
 }
 

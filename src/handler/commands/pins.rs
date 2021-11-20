@@ -1,8 +1,7 @@
-
-
 use crate::errors::Result;
 use crate::structs::reply::{Reply, ReplyType};
 
+use log::trace;
 use serenity::{model::channel::ChannelType, model::channel::Message, prelude::*};
 use std::collections::HashMap;
 
@@ -35,7 +34,7 @@ pub async fn pins<'a>(ctx: &Context, msg: &'a Message) -> Result<Reply<'a>> {
 
     tuples.sort_by_key(|x| x.1);
     tuples.reverse();
-    println!("{:?}", tuples);
+    trace!("found the following pins {tuples:?}");
 
     let response = format!(
         "the chamPIoNship\n{}",
@@ -46,6 +45,5 @@ pub async fn pins<'a>(ctx: &Context, msg: &'a Message) -> Result<Reply<'a>> {
             .join("\n")
     );
 
-    println!("returning to send pins response");
     Ok(Reply::new(response, ReplyType::Channel(msg.channel_id)))
 }

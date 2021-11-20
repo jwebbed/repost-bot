@@ -19,9 +19,12 @@ linkify = "0.7.0"
 regex = "1"
 lazy_static = "1.4.0"
 humantime = "2.1.0"
+log = "0.4"
+simple_logger = "2"
 phf = { version = "0.9", features = ["macros"] }
 unicode-segmentation = "1.7"
 rand = "0.8"
+time = "0.3"
 
 [dependencies.serenity]
 version = "0.10"

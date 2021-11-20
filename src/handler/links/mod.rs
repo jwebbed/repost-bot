@@ -11,6 +11,7 @@ use crate::structs::Link;
 use humantime::format_duration;
 use lazy_static::lazy_static;
 use linkify::{LinkFinder, LinkKind};
+use log::{error, info};
 use regex::Regex;
 use serenity::model::channel::Message;
 use std::time::Duration;
@@ -57,7 +58,7 @@ fn get_duration(msg: &Message, link: &Link) -> Result<Duration> {
     match ret {
         Ok(val) => Ok(val),
         Err(why) => {
-            println!("Failed to get duration with following error: {:?}", why);
+            error!("Failed to get duration with following error: {why:?}");
             Err(Error::Internal(format!("{:?}", why)))
         }
     }
@@ -104,7 +105,7 @@ impl Handler {
             let filtered_link = match filtered_url(&link) {
                 Ok(url) => url,
                 Err(why) => {
-                    println!("Failed to filter url: {why:?}");
+                    error!("Failed to filter url: {why:?}");
                     continue;
                 }
             };
@@ -115,7 +116,7 @@ impl Handler {
         }
         let len = reposts.len();
         if len > 0 {
-            println!("Found {len} reposts: {reposts:?}");
+            info!("Found {len} reposts: {reposts:?}");
         }
 
         Ok(repost_message(msg, &reposts))

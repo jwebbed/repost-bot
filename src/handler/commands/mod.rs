@@ -6,7 +6,10 @@ use super::Handler;
 use crate::db::DB;
 use crate::errors::Result;
 use crate::structs::reply::{Reply, ReplyType};
+
+use log::{warn};
 use serenity::{model::channel::Message, prelude::*};
+
 
 fn repost_cnt(msg: &Message) -> Result<Reply<'_>> {
     let reposts = match DB::db_call(|db| db.get_repost_list(*msg.guild_id.unwrap().as_u64())) {
@@ -70,7 +73,7 @@ impl Handler {
         match ret {
             Ok(resp) => Some(resp),
             Err(why) => {
-                println!("Failed to process command {command} with err: {why}");
+                warn!("Failed to process command {command} with err: {why}");
                 None
             }
         }

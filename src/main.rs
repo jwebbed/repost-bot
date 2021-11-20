@@ -9,7 +9,12 @@ mod errors;
 mod handler;
 mod structs;
 
+use log::LevelFilter;
+use log::{error, info, warn};
 use serenity::prelude::*;
+use simple_logger::SimpleLogger;
+use time::UtcOffset;
+
 use std::env;
 use std::process;
 
@@ -18,9 +23,9 @@ use handler::Handler;
 
 fn migrate_db() {
     match DB::migrate() {
-        Ok(_) => println!("Sucessfully loaded and migrated db"),
+        Ok(_) => info!("sucessfully loaded and migrated db"),
         Err(why) => {
-            println!("Failed to migrate, exiting {:?}", why);
+            error!("Failed to migrate, exiting {why:?}");
             process::exit(-1);
         }
     };
@@ -28,6 +33,14 @@ fn migrate_db() {
 
 #[tokio::main]
 async fn main() {
+    SimpleLogger::new()
+        .with_level(LevelFilter::Warn)
+        .with_module_level("repost_bot", LevelFilter::Trace)
+        // EST offset, will be incorrect if it runs over DST
+        // Could we please abolish DST
+        .with_utc_offset(UtcOffset::from_hms(-5, 0, 0).unwrap())
+        .init()
+        .unwrap();
     // Configure the client with your Discord bot token in the environment.
     let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
     // migrate the db
@@ -46,6 +59,6 @@ async fn main() {
     // Shards will automatically attempt to reconnect, and will perform
     // exponential backoff until it reconnects.
     if let Err(why) = client.start().await {
-        println!("Client error: {:?}", why);
+        error!("Client error: {:?}", why);
     }
 }
