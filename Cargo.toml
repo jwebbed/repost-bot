@@ -12,6 +12,7 @@ lto = "fat"
 codegen-units = 1
 
 [dependencies]
+chrono = "^0.4"
 url = "2"
 linkify = "0.7.0"
 regex = "1"

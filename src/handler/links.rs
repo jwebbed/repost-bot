@@ -151,10 +151,6 @@ fn query_link_matches(url_str: &str, server: u64) -> Result<Vec<Link>> {
     Ok(links)
 }
 
-fn get_link_str(link: &Link) -> String {
-    MessageId(link.message).link(ChannelId(link.channel), Some(GuildId(link.server)))
-}
-
 // returns true if the input string is a discord message link
 fn is_discord_link(text: &str) -> bool {
     lazy_static! {
@@ -220,12 +216,21 @@ impl Handler {
                     "\n{}",
                     reposts
                         .iter()
-                        .map(|x| get_link_str(x))
+                        .map(|x| x.message_uri())
                         .collect::<Vec<String>>()
                         .join("\n")
                 )
             } else {
-                get_link_str(&reposts[0])
+                let t = msg
+                    .id
+                    .created_at()
+                    .signed_duration_since(reposts[0].created_at)
+                    .to_std();
+                match t {
+                    Ok(val) => println!("time since post {:?}", val),
+                    Err(why) => println!("{:?}", why),
+                };
+                reposts[0].message_uri()
             };
 
             msg.reply(&ctx.http, format!("🚨 REPOST 🚨 {}", repost_str))

@@ -203,7 +203,7 @@ impl DB {
     pub fn query_links(&self, link: &str, server: u64) -> Result<Vec<Link>> {
         let conn = self.conn.borrow();
         let mut stmt = conn.prepare(
-            "SELECT L.id, L.link, S.id, C.id, M.id, C.name, S.name
+            "SELECT L.id, L.link, S.id, C.id, M.id, M.created_at, C.name, S.name
             FROM link AS L 
             JOIN message_link as ML on ML.link=L.id
             JOIN message as M on ML.message=M.id
@@ -221,8 +221,9 @@ impl DB {
                 server: row.get(2)?,
                 channel: row.get(3)?,
                 message: row.get(4)?,
-                channel_name: row.get(5)?,
-                server_name: row.get(6)?,
+                created_at: row.get(5)?,
+                channel_name: row.get(6)?,
+                server_name: row.get(7)?,
             })
         })?;
 
