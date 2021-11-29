@@ -168,28 +168,4 @@ mod tests {
             0
         );
     }
-
-    #[test]
-    fn test_filter_link() -> Result<()> {
-        assert!(!filter_field("www.youtube.com", "v"));
-        assert!(filter_field("twitter.com", "s"));
-
-        let filtered = filtered_url("https://twitter.com/user/status/idnumber?s=21")?;
-        assert_eq!(
-            filtered.as_str(),
-            "https://twitter.com/user/status/idnumber"
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_youtube_sl() -> Result<()> {
-        let url = Url::parse("https://youtu.be/fakeid")?;
-        assert_eq!(
-            transform_url(url)?.as_str(),
-            "https://www.youtube.com/watch?v=fakeid"
-        );
-        Ok(())
-    }
 }

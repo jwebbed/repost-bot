@@ -133,6 +133,7 @@ pub fn filtered_url(url_str: &str) -> Result<Url> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     #[test]
     fn test_filter_link() -> Result<()> {
         assert!(!filter_field("www.youtube.com", "v"));
