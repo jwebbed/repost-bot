@@ -224,11 +224,4 @@ mod tests {
         assert!(table_info.contains_key("server"));
         Ok(())
     }
-    /*#[test]
-    fn test_extract_link() {
-        let links = get_links("test msg with link https://twitter.com/user/status/idnumber?s=20");
-
-        assert_eq!(links.len(), 1);
-        assert_eq!(links[0], "https://twitter.com/user/status/idnumber?s=20");
-    }*/
 }
