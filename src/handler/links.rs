@@ -10,7 +10,6 @@ use phf::phf_set;
 use regex::Regex;
 use serenity::{
     model::channel::Message,
-    model::id::{ChannelId, GuildId, MessageId},
     prelude::*,
 };
 use url::Url;
