@@ -4,14 +4,12 @@ use crate::db::DB;
 use crate::errors::Result;
 use crate::structs::Link;
 
+use chrono::Duration;
 use lazy_static::lazy_static;
 use linkify::{LinkFinder, LinkKind};
 use phf::phf_set;
 use regex::Regex;
-use serenity::{
-    model::channel::Message,
-    prelude::*,
-};
+use serenity::{model::channel::Message, prelude::*};
 use url::Url;
 
 // largely sourced from newhouse/url-tracking-stripper on github
@@ -167,6 +165,10 @@ fn get_links(msg: &str) -> Vec<String> {
         .map(|x| x.as_str().to_string())
         .filter(|link| !is_discord_link(link))
         .collect()
+}
+
+fn get_duration(msg: &Message, link: &Link) -> Duration {
+    msg.id.created_at().signed_duration_since(link.created_at)
 }
 
 impl Handler {
