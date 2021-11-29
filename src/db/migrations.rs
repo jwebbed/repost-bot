@@ -1,7 +1,7 @@
 use super::queries;
 use crate::errors::Result;
-use rusqlite::{params, Connection};
-use std::collections::HashMap;
+use rusqlite::Connection;
+//use std::collections::HashMap;
 
 const MIGRATION_1: [&str; 6] = [
     // add server table
@@ -172,6 +172,8 @@ pub fn migrate(conn: &mut Connection) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rusqlite::params;
+    use std::collections::HashMap;
 
     #[derive(Debug, Clone)]
     struct TableInfo {
