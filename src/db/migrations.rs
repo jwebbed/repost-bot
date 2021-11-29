@@ -176,7 +176,7 @@ mod tests {
     use std::collections::HashMap;
 
     #[derive(Debug, Clone)]
-    struct TableInfo {
+    struct ColumnInfo {
         pub cid: usize,
         pub name: String,
         pub type_name: String,
@@ -191,11 +191,11 @@ mod tests {
         Ok(conn)
     }
 
-    fn get_table_info(table_name: &str) -> Result<HashMap<String, TableInfo>> {
+    fn get_table_info(table_name: &str) -> Result<HashMap<String, ColumnInfo>> {
         let conn = get_migrated_db()?;
         let mut stmt = conn.prepare("SELECT * FROM pragma_table_info(?1);")?;
         let rows = stmt.query_map(params![table_name], |row| {
-            Ok(TableInfo {
+            Ok(ColumnInfo {
                 cid: row.get(0)?,
                 name: row.get(1)?,
                 type_name: row.get(2)?,
@@ -215,13 +215,16 @@ mod tests {
 
     #[test]
     fn test_channel_table() -> Result<()> {
-        let table_info = get_table_info("channel")?;
-        println!("{:#?}", table_info);
+        let ti = get_table_info("channel")?;
+        println!("{:#?}", ti);
 
-        assert!(table_info.contains_key("id"));
-        assert!(table_info.contains_key("name"));
-        assert!(table_info.contains_key("visible"));
-        assert!(table_info.contains_key("server"));
+        assert!(ti.contains_key("id"));
+        assert!(ti.contains_key("name"));
+        assert!(ti.contains_key("visible"));
+        assert!(ti.contains_key("server"));
+
+        // Expect only 4 columns in channel table
+        assert_eq!(ti.len(), 4);
         Ok(())
     }
 }
