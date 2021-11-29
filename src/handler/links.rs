@@ -198,7 +198,7 @@ impl Handler {
                 }
             };
 
-            // first need to insert into db
+            // finally insert this link into db
             log_error(
                 DB::db_call(|db| db.insert_link(filtered_link.as_str(), *msg.id.as_u64())),
                 "Insert link",
