@@ -1,7 +1,6 @@
 use super::queries;
 use crate::errors::Result;
 use rusqlite::Connection;
-//use std::collections::HashMap;
 
 const MIGRATION_1: [&str; 6] = [
     // add server table
