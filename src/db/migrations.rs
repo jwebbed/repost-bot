@@ -1,6 +1,7 @@
 use super::queries;
 use crate::errors::Result;
-use rusqlite::Connection;
+use rusqlite::{params, Connection};
+use std::collections::HashMap;
 
 const MIGRATION_1: [&str; 6] = [
     // add server table
@@ -166,4 +167,66 @@ pub fn migrate(conn: &mut Connection) -> Result<()> {
 
     println!("migration successful");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Debug, Clone)]
+    struct TableInfo {
+        pub cid: usize,
+        pub name: String,
+        pub type_name: String,
+        pub not_null: usize,
+        pub default_value: Option<String>,
+        pub pk: usize,
+    }
+
+    fn get_migrated_db() -> Result<Connection> {
+        let mut conn = Connection::open_in_memory()?;
+        migrate(&mut conn)?;
+        Ok(conn)
+    }
+
+    fn get_table_info(table_name: &str) -> Result<HashMap<String, TableInfo>> {
+        let conn = get_migrated_db()?;
+        let mut stmt = conn.prepare("SELECT * FROM pragma_table_info(?1);")?;
+        let rows = stmt.query_map(params![table_name], |row| {
+            Ok(TableInfo {
+                cid: row.get(0)?,
+                name: row.get(1)?,
+                type_name: row.get(2)?,
+                not_null: row.get(3)?,
+                default_value: row.get(4)?,
+                pk: row.get(5)?,
+            })
+        })?;
+
+        let mut m = HashMap::new();
+        for row in rows {
+            let info = row?;
+            m.insert(info.name.clone(), info);
+        }
+        Ok(m)
+    }
+
+    #[test]
+    fn test_channel_table() -> Result<()> {
+        let table_info = get_table_info("channel")?;
+        println!("{:#?}", table_info);
+
+        assert!(table_info.contains_key("id"));
+        assert!(table_info.contains_key("name"));
+        assert!(table_info.contains_key("visible"));
+        assert!(table_info.contains_key("server"));
+        Ok(())
+    }
+    /*#[test]
+    fn test_extract_link() {
+        let links = get_links("test msg with link https://twitter.com/user/status/idnumber?s=20");
+
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0], "https://twitter.com/user/status/idnumber?s=20");
+    }*/
 }
