@@ -1,5 +1,4 @@
-use chrono::{DateTime, Duration, Utc};
-use serenity::model::channel::Message;
+use chrono::{DateTime, Utc};
 use serenity::model::id::{ChannelId, GuildId, MessageId};
 
 #[derive(Debug)]

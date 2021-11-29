@@ -1,4 +1,5 @@
 mod commands;
+mod filter;
 mod links;
 
 use crate::errors::Result;
