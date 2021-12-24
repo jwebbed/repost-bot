@@ -2,14 +2,15 @@ use super::filter::filtered_url;
 use super::{log_error, Handler};
 
 use crate::db::DB;
-use crate::errors::Result;
+use crate::errors::{Error, Result};
 use crate::structs::Link;
 
-use chrono::Duration;
+use humantime::format_duration;
 use lazy_static::lazy_static;
 use linkify::{LinkFinder, LinkKind};
 use regex::Regex;
 use serenity::{model::channel::Message, prelude::*};
+use std::time::Duration;
 
 fn query_link_matches(url_str: &str, server: u64) -> Result<Vec<Link>> {
     let mut links = Vec::new();
@@ -38,8 +39,16 @@ fn get_links(msg: &str) -> Vec<String> {
         .collect()
 }
 
-fn get_duration(msg: &Message, link: &Link) -> Duration {
-    msg.id.created_at().signed_duration_since(link.created_at)
+fn get_duration(msg: &Message, link: &Link) -> Result<Duration> {
+    let ret = msg
+        .id
+        .created_at()
+        .signed_duration_since(link.created_at)
+        .to_std();
+    match ret {
+        Ok(val) => Ok(val),
+        Err(why) => Err(Error::Internal(format!("{:?}", why))),
+    }
 }
 
 impl Handler {
@@ -93,13 +102,8 @@ impl Handler {
                         .join("\n")
                 )
             } else {
-                let t = msg
-                    .id
-                    .created_at()
-                    .signed_duration_since(reposts[0].created_at)
-                    .to_std();
-                match t {
-                    Ok(val) => println!("time since post {:?}", val),
+                match get_duration(msg, &reposts[0]) {
+                    Ok(val) => println!("time since post {}", format_duration(val)),
                     Err(why) => println!("{:?}", why),
                 };
                 reposts[0].message_uri()
