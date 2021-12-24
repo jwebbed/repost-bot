@@ -1,8 +1,8 @@
 [package]
 name = "repost-bot"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Jonathan Webb <jonathan@webb.nyc>"]
-edition = "2018"
+edition = "2021"
 license = "GPL-3.0-or-later"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -12,10 +12,12 @@ lto = "fat"
 codegen-units = 1
 
 [dependencies]
+chrono = "^0.4"
 url = "2"
 linkify = "0.7.0"
 regex = "1"
 lazy_static = "1.4.0"
+humantime = "2.1.0"
 phf = { version = "0.9", features = ["macros"] }
 
 [dependencies.serenity]
