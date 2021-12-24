@@ -47,8 +47,20 @@ fn get_duration(msg: &Message, link: &Link) -> Result<Duration> {
         .to_std();
     match ret {
         Ok(val) => Ok(val),
-        Err(why) => Err(Error::Internal(format!("{:?}", why))),
+        Err(why) => {
+            println!("Failed to get duration with following error: {:?}", why);
+            Err(Error::Internal(format!("{:?}", why)))
+        }
     }
+}
+
+fn repost_text(msg: &Message, link: &Link) -> String {
+    let duration_text = match get_duration(msg, link) {
+        Ok(val) => format_duration(val).to_string(),
+        Err(_) => "".to_string(),
+    };
+
+    format!("{} {}", duration_text, link.message_uri())
 }
 
 impl Handler {
@@ -97,16 +109,12 @@ impl Handler {
                     "\n{}",
                     reposts
                         .iter()
-                        .map(|x| x.message_uri())
+                        .map(|x| repost_text(msg, x))
                         .collect::<Vec<String>>()
                         .join("\n")
                 )
             } else {
-                match get_duration(msg, &reposts[0]) {
-                    Ok(val) => println!("time since post {}", format_duration(val)),
-                    Err(why) => println!("{:?}", why),
-                };
-                reposts[0].message_uri()
+                repost_text(msg, &reposts[0])
             };
 
             msg.reply(&ctx.http, format!("🚨 REPOST 🚨 {}", repost_str))
