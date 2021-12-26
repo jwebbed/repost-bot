@@ -1,11 +1,12 @@
 use super::filter::filtered_url;
+use super::time_parser::format_duration;
 use super::{log_error, Handler};
 
 use crate::db::DB;
 use crate::errors::{Error, Result};
 use crate::structs::Link;
 
-use humantime::format_duration;
+//use humantime::format_duration;
 use lazy_static::lazy_static;
 use linkify::{LinkFinder, LinkKind};
 use regex::Regex;

@@ -1,6 +1,7 @@
 mod commands;
 mod filter;
 mod links;
+mod time_parser;
 
 use crate::errors::Result;
 use serenity::{
