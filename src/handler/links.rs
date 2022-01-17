@@ -43,7 +43,7 @@ fn get_duration(msg: &Message, link: &Link) -> Result<Duration> {
     let ret = msg
         .id
         .created_at()
-        .signed_duration_since(link.created_at)
+        .signed_duration_since(link.message.created_at)
         .to_std();
     match ret {
         Ok(val) => Ok(val),
@@ -60,7 +60,7 @@ fn repost_text(msg: &Message, link: &Link) -> String {
         Err(_) => "".to_string(),
     };
 
-    format!("{} {}", duration_text, link.message_uri())
+    format!("{} {}", duration_text, link.message.uri())
 }
 
 impl Handler {
@@ -93,6 +93,11 @@ impl Handler {
                 "Insert link",
             );
         }
+
+        log_error(
+            DB::db_call(|db| db.mark_message_repost_checked(msg.id)),
+            "Set repost checked",
+        );
 
         reposts
     }

@@ -19,6 +19,7 @@ regex = "1"
 lazy_static = "1.4.0"
 humantime = "2.1.0"
 phf = { version = "0.9", features = ["macros"] }
+unicode-segmentation = "1.7"
 
 [dependencies.serenity]
 version = "0.10"

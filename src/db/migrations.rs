@@ -121,6 +121,68 @@ fn migration_3(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+const MIGRATION_4: [&str; 6] = [
+    "CREATE TABLE wordle ( 
+        message INTEGER PRIMARY KEY,
+        number INTEGER NOT NULL,
+        score INTEGER NOT NULL,
+        hardmode BOOLEAN NOT NULL,
+
+        board_r1c1 INTEGER NOT NULL,
+        board_r1c2 INTEGER NOT NULL,
+        board_r1c3 INTEGER NOT NULL,
+        board_r1c4 INTEGER NOT NULL,
+        board_r1c5 INTEGER NOT NULL,
+
+        board_r2c1 INTEGER NOT NULL,
+        board_r2c2 INTEGER NOT NULL,
+        board_r2c3 INTEGER NOT NULL,
+        board_r2c4 INTEGER NOT NULL,
+        board_r2c5 INTEGER NOT NULL,
+
+        board_r3c1 INTEGER NOT NULL,
+        board_r3c2 INTEGER NOT NULL,
+        board_r3c3 INTEGER NOT NULL,
+        board_r3c4 INTEGER NOT NULL,
+        board_r3c5 INTEGER NOT NULL,
+
+        board_r4c1 INTEGER NOT NULL,
+        board_r4c2 INTEGER NOT NULL,
+        board_r4c3 INTEGER NOT NULL,
+        board_r4c4 INTEGER NOT NULL,
+        board_r4c5 INTEGER NOT NULL,
+
+        board_r5c1 INTEGER NOT NULL,
+        board_r5c2 INTEGER NOT NULL,
+        board_r5c3 INTEGER NOT NULL,
+        board_r5c4 INTEGER NOT NULL,
+        board_r5c5 INTEGER NOT NULL,
+
+        board_r6c1 INTEGER NOT NULL,
+        board_r6c2 INTEGER NOT NULL,
+        board_r6c3 INTEGER NOT NULL,
+        board_r6c4 INTEGER NOT NULL,
+        board_r6c5 INTEGER NOT NULL,
+
+        FOREIGN KEY(message) REFERENCES message(id) ON DELETE CASCADE
+    );",
+    "CREATE UNIQUE INDEX idx_wordle_user ON wordle (message, score, hardmode);",
+    "ALTER TABLE message ADD author INTEGER DEFAULT NULL;",
+    "ALTER TABLE message ADD parsed_repost BOOLEAN DEFAULT FALSE;",
+    "ALTER TABLE message ADD parsed_wordle BOOLEAN DEFAULT FALSE;",
+    // Want the default to be FALSE for all new entries, but all
+    // existing at time of migration should be TRUE
+    "UPDATE message SET parsed_repost = TRUE;",
+];
+
+fn migration_4(conn: &Connection) -> Result<()> {
+    for migration in MIGRATION_4 {
+        conn.execute(migration, [])?;
+    }
+    queries::set_version(conn, 4)?;
+    Ok(())
+}
+
 fn delete_old_links(conn: &Connection) -> Result<()> {
     conn.execute(
         "DELETE FROM link WHERE id IN (
@@ -136,7 +198,7 @@ fn delete_old_links(conn: &Connection) -> Result<()> {
 
 pub fn migrate(conn: &mut Connection) -> Result<()> {
     // be sure to increment this everytime a new migration is added
-    const FINAL_VER: u32 = 3;
+    const FINAL_VER: u32 = 4;
 
     let ver = queries::get_version(conn)?;
 
@@ -157,6 +219,9 @@ pub fn migrate(conn: &mut Connection) -> Result<()> {
     }
     if ver < 3 {
         migration_3(&tx)?;
+    }
+    if ver < 4 {
+        migration_4(&tx)?;
     }
 
     // delete old links we don't need

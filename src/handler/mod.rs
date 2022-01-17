@@ -1,6 +1,7 @@
 mod commands;
 mod filter;
 mod links;
+mod wordle;
 
 use crate::errors::Result;
 use serenity::{
@@ -62,11 +63,13 @@ impl Handler {
                 if msg.guild_id.is_none() {
                     msg.guild_id = Some(GuildId(server_id));
                 }
-                if db.add_message(
+                let db_msg = db.add_message(
                     msg.id,
                     *msg.channel_id.as_u64(),
                     *msg.guild_id.unwrap().as_u64(),
-                )? {
+                    *msg.author.id.as_u64(),
+                )?;
+                if !db_msg.parsed_repost {
                     self.store_links_and_get_reposts(&msg);
                 } else {
                     println!("message {} already processed", msg.id.as_u64());
@@ -123,13 +126,18 @@ impl EventHandler for Handler {
             "Db update channel",
         );
 
+        // TODO: Add a author table and store author information, for now just
+        // store author_id on message. Will later populate the author table
+        // using the id snowflake as the primary key
+        let author_id = *msg.author.id.as_u64();
         log_error(
-            db.add_message(msg.id, channel_id, server_id),
+            db.add_message(msg.id, channel_id, server_id, author_id),
             "Db add message",
         );
 
         if msg.kind == MessageType::Regular {
             self.check_links(&ctx, &msg).await;
+            self.check_wordle(&msg);
             log_error(
                 self.process_old_messages(&ctx.http, channel_id, server_id)
                     .await,

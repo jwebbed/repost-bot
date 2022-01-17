@@ -2,10 +2,20 @@ mod migrations;
 mod queries;
 
 use crate::errors::{Error, Result};
-use crate::structs::{Link, RepostCount};
+use crate::structs::wordle::Wordle;
+use crate::structs::{Link, Message, RepostCount};
+use rusqlite::types::ToSql;
 use rusqlite::{params, Connection};
 use serenity::model::id::{ChannelId, GuildId, MessageId};
 use std::cell::RefCell;
+
+fn repeat_vars(count: usize) -> String {
+    assert_ne!(count, 0);
+    let mut s = "?,".repeat(count);
+    // Remove trailing comma
+    s.pop();
+    s
+}
 
 pub struct DB {
     conn: RefCell<Connection>,
@@ -86,29 +96,46 @@ impl DB {
         message_id: MessageId,
         channel_id: u64,
         server_id: u64,
-    ) -> Result<bool> {
+        author_id: u64,
+    ) -> Result<Message> {
         let conn = self.conn.borrow();
         let mut stmt = conn.prepare(
-            "INSERT INTO message (id, server, channel, created_at) VALUES ( ?1, ?2, ?3, ?4 )
+            "INSERT INTO message (id, server, channel, created_at, author) 
+            VALUES ( ?1, ?2, ?3, ?4, ?5 )
             ON CONFLICT(id) DO NOTHING",
         )?;
 
-        match stmt.execute(params![
-            *message_id.as_u64(),
+        let msg_id64 = *message_id.as_u64();
+        stmt.execute(params![
+            msg_id64,
             server_id,
             channel_id,
-            message_id.created_at()
-        ]) {
-            Ok(cnt) => {
-                if cnt > 0 {
-                    println!("Added message_id {} db", message_id);
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            }
+            message_id.created_at(),
+            author_id
+        ])?;
+
+        match queries::get_message(&conn, msg_id64) {
+            Ok(ret) => Ok(ret),
             Err(why) => Err(Error::from(why)),
         }
+    }
+
+    pub fn mark_message_repost_checked(&self, message_id: MessageId) -> Result<()> {
+        let conn = self.conn.borrow();
+        conn.execute(
+            "UPDATE message SET parsed_repost=TRUE WHERE id=(?1)",
+            [*message_id.as_u64()],
+        )?;
+        Ok(())
+    }
+
+    pub fn mark_message_wordle_checked(&self, message_id: MessageId) -> Result<()> {
+        let conn = self.conn.borrow();
+        conn.execute(
+            "UPDATE message SET parsed_wordle=TRUE WHERE id=(?1)",
+            [*message_id.as_u64()],
+        )?;
+        Ok(())
     }
 
     pub fn delete_message(&self, message_id: MessageId) -> Result<()> {
@@ -203,7 +230,9 @@ impl DB {
     pub fn query_links(&self, link: &str, server: u64) -> Result<Vec<Link>> {
         let conn = self.conn.borrow();
         let mut stmt = conn.prepare(
-            "SELECT L.id, L.link, S.id, C.id, M.id, M.created_at, C.name, S.name
+            "SELECT 
+                L.id, L.link, S.id, C.id, M.id, M.created_at, C.name, 
+                S.name, M.author, M.parsed_repost, M.parsed_wordle
             FROM link AS L 
             JOIN message_link as ML on ML.link=L.id
             JOIN message as M on ML.message=M.id
@@ -218,12 +247,17 @@ impl DB {
             Ok(Link {
                 id: row.get(0)?,
                 link: row.get(1)?,
-                server: row.get(2)?,
-                channel: row.get(3)?,
-                message: row.get(4)?,
-                created_at: row.get(5)?,
                 channel_name: row.get(6)?,
                 server_name: row.get(7)?,
+                message: Message {
+                    id: row.get(4)?,
+                    server: row.get(2)?,
+                    channel: row.get(3)?,
+                    author: row.get(8)?,
+                    created_at: row.get(5)?,
+                    parsed_repost: row.get(9)?,
+                    parsed_wordle: row.get(10)?,
+                },
             })
         })?;
 
@@ -268,5 +302,37 @@ impl DB {
         }
 
         Ok(reposts)
+    }
+
+    pub fn insert_wordle(&self, message_id: u64, wordle: &Wordle) -> Result<()> {
+        let conn = self.conn.borrow();
+        let mut stmt = conn.prepare(&format!(
+            "INSERT INTO wordle VALUES ({})
+            ON CONFLICT(message) DO NOTHING",
+            repeat_vars(4 + 5 * 6)
+        ))?;
+
+        match stmt.execute(rusqlite::params_from_iter(
+            wordle.get_query_parts(message_id),
+        )) {
+            Ok(_) => Ok(()),
+            Err(why) => Err(Error::from(why)),
+        }
+    }
+}
+
+impl Wordle {
+    fn get_query_parts(&self, message_id: u64) -> Vec<Box<dyn ToSql>> {
+        let mut ret: Vec<Box<dyn ToSql>> = Vec::new();
+
+        ret.push(Box::new(message_id));
+        ret.push(Box::new(self.number));
+        ret.push(Box::new(self.score));
+        ret.push(Box::new(self.hardmode));
+
+        for element in self.board {
+            ret.push(Box::new(element));
+        }
+        ret
     }
 }
