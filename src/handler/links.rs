@@ -20,11 +20,17 @@ fn query_link_matches(url_str: &str, server: u64) -> Result<Vec<Link>> {
     Ok(links)
 }
 
-// returns true if the input string is a discord message link
-fn is_discord_link(text: &str) -> bool {
+const IGNORED_DOMAINS: [&str; 3] = [
+    "globle-game.com",
+    r"discord\.com/channels",
+    r"tenor\.com/view",
+];
+
+/// returns true if the input link is one of the ignored domains
+fn ignored_domain(text: &str) -> bool {
     lazy_static! {
         static ref RE: Regex =
-            Regex::new(r"^https?://(discord\.com/channels|tenor\.com/view)/\S*").unwrap();
+            Regex::new(format!(r"^https?://({})/\S*", IGNORED_DOMAINS.join("|")).as_str()).unwrap();
     }
     RE.is_match(text)
 }
@@ -35,7 +41,7 @@ fn get_links(msg: &str) -> Vec<String> {
     finder
         .links(msg)
         .map(|x| x.as_str().to_string())
-        .filter(|link| !is_discord_link(link))
+        .filter(|link| !ignored_domain(link))
         .collect()
 }
 
@@ -184,5 +190,17 @@ mod tests {
             get_links("example@example.org isnt a link but could be by some definitions").len(),
             0
         );
+    }
+
+    #[test]
+    fn test_ignore_globle() {
+        let message = r"🌎 Feb 24, 2022 🌍
+        Today's guesses: 17
+        Current streak: 1
+        Average guesses: 17
+        
+        https://globle-game.com/";
+
+        assert_eq!(get_links(message).len(), 0);
     }
 }

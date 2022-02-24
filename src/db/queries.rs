@@ -14,7 +14,6 @@ pub fn set_version(conn: &Connection, version: u32) -> Result<()> {
 }
 
 pub fn get_message(conn: &Connection, msg_id: u64) -> Result<Message> {
-    // let mut stmt = conn.prepare(
     const QUERY: &str =
         "SELECT id, server, channel, author, created_at, parsed_repost, parsed_wordle
         FROM message WHERE id=(?1)";
