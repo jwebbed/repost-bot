@@ -15,6 +15,7 @@ use serenity::{
     },
     prelude::*,
 };
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::iter::FromIterator;
 
@@ -22,6 +23,7 @@ use crate::db::DB;
 
 pub struct Handler;
 
+#[inline(always)]
 pub fn log_error<T>(r: Result<T>, label: &str) {
     match r {
         Ok(_) => (),
@@ -49,8 +51,8 @@ impl Handler {
     ) -> Result<()> {
         const LIMIT: u64 = 50;
         let db = DB::get_db()?;
-        let query = match db.get_oldest_message(channel_id)? {
-            Some(value) => format!("?limit={}&before={}", LIMIT, value),
+        let query = match db.get_newest_unchecked_message(channel_id)? {
+            Some(value) => format!("?limit={}&around={}", LIMIT, value),
             None => format!("?limit={}", LIMIT),
         };
 
@@ -69,10 +71,12 @@ impl Handler {
                     *msg.guild_id.unwrap().as_u64(),
                     *msg.author.id.as_u64(),
                 )?;
+
                 if !db_msg.parsed_repost {
                     self.store_links_and_get_reposts(&msg);
-                } else {
-                    println!("message {} already processed", msg.id.as_u64());
+                }
+                if !db_msg.parsed_wordle {
+                    self.check_wordle(&msg);
                 }
             }
         } else {
@@ -226,16 +230,21 @@ impl EventHandler for Handler {
         };
         for guild in guilds {
             match guild.channels(&ctx.http).await {
-                Ok(channels) => {
-                    let channel_list = HashSet::<String>::from_iter(
-                        channels
-                            .into_iter()
-                            .filter(|channel| {
-                                channel.1.kind != ChannelType::Voice
-                                    && channel.1.kind != ChannelType::Category
-                            })
-                            .map(|channel| channel.1.name),
-                    );
+                Ok(all_channels) => {
+                    let mut mchannels = HashMap::new();
+                    for (k, v) in all_channels {
+                        if v.kind != ChannelType::Voice && v.kind != ChannelType::Category {
+                            mchannels.insert(k, v);
+                        }
+                    }
+                    // no longer mutable
+                    let channels = mchannels;
+
+                    let channel_list = channels
+                        .values()
+                        .map(|c| String::from(c.name.as_str()))
+                        .collect::<Vec<String>>();
+
                     println!(
                         "found server with id {} and channels {:?}",
                         guild, channel_list
@@ -253,6 +262,25 @@ impl EventHandler for Handler {
                                 name
                             );
                             log_error(db.delete_channel(id), "Db delete channel");
+                        }
+                    }
+
+                    // check for most recent message
+                    for id in channels.keys().map(|id| *id.as_u64()) {
+                        match ctx.http.get_messages(id, "?limit=1").await {
+                            Ok(msg) => log_error(
+                                db.add_message(
+                                    msg[0].id,
+                                    *msg[0].channel_id.as_u64(),
+                                    *guild.as_u64(),
+                                    *msg[0].author.id.as_u64(),
+                                ),
+                                "db add message",
+                            ),
+                            Err(why) => println!(
+                                "failed to load most recent message for id {} {:?}",
+                                id, why
+                            ),
                         }
                     }
                 }

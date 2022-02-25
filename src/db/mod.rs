@@ -91,6 +91,25 @@ impl DB {
         Ok(ret)
     }
 
+    pub fn get_newest_unchecked_message(&self, channel_id: u64) -> Result<Option<u64>> {
+        let conn = self.conn.borrow();
+
+        let ret = conn.query_row(
+            "SELECT id FROM message 
+            WHERE channel=(?1) AND (
+                parsed_repost=FALSE
+                OR parsed_wordle=FALSE
+                OR AUTHOR IS NULL
+            )
+            ORDER BY created_at desc
+            LIMIT 1",
+            [channel_id],
+            |row| row.get(0),
+        )?;
+
+        Ok(ret)
+    }
+
     pub fn add_message(
         &self,
         message_id: MessageId,
