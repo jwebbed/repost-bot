@@ -17,8 +17,6 @@ use serenity::{
 };
 use std::collections::HashMap;
 
-
-
 use crate::db::DB;
 
 pub struct Handler;
