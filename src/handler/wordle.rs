@@ -17,16 +17,13 @@ fn parse_square(text: &str) -> Result<LetterStatus, String> {
 }
 #[inline(always)]
 fn is_unicode_newline(text: &str) -> bool {
-    match text {
-        "\r\n" | "\n" | "\x0b" | "\r" /* | "\x85" | "\f"*/ => true,
-        _ => false,
-    }
+    matches!(text, "\r\n" | "\n" | "\x0b" | "\r")
 }
 
 fn generate_board(text: &str) -> Result<WordleBoard, String> {
     let letters = UnicodeSegmentation::graphemes(text, true)
         .filter(|c| !is_unicode_newline(c))
-        .map(|c| parse_square(c))
+        .map(parse_square)
         .collect::<Result<Vec<LetterStatus>, _>>()?;
 
     if letters.len() % 5 != 0 {
@@ -36,10 +33,10 @@ fn generate_board(text: &str) -> Result<WordleBoard, String> {
         ))
     } else {
         let mut ret: [[LetterStatus; 5]; 6] = Default::default();
-        for i in 0..letters.len() {
+        for (i, letter) in letters.iter().enumerate() {
             let row = i / 5;
             let col = i % 5;
-            ret[row][col] = letters[i];
+            ret[row][col] = *letter;
         }
 
         println!("{:?}", ret);
@@ -56,18 +53,16 @@ fn parse_wordle(text: &str) -> Result<Wordle, String> {
         .unwrap();
     }
 
-    let caps = RE
-        .captures(text)
-        .ok_or_else(|| "Text didn't match wordle")?;
+    let caps = RE.captures(text).ok_or("Text didn't match wordle")?;
 
     let number = caps
         .get(1)
-        .ok_or_else(|| "Couldn't unwrap number")?
+        .ok_or("Couldn't unwrap number")?
         .as_str()
         .parse::<u32>()
-        .or_else(|_| Err("Couldn't parse number"));
+        .map_err(|_| "Couldn't parse number");
 
-    let score = match caps.get(2).ok_or_else(|| "Couldn't unwrap score")?.as_str() {
+    let score = match caps.get(2).ok_or("Couldn't unwrap score")?.as_str() {
         "X" => Ok(0),
         "1" => Ok(1),
         "2" => Ok(2),
@@ -79,12 +74,9 @@ fn parse_wordle(text: &str) -> Result<Wordle, String> {
         err => Err(format!("Invalid score parsed: {}", err)),
     };
 
-    let hardmode_flag = caps
-        .get(3)
-        .ok_or_else(|| "Couldn't unwrap hardmode")?
-        .as_str();
+    let hardmode_flag = caps.get(3).ok_or("Couldn't unwrap hardmode")?.as_str();
 
-    let board = generate_board(caps.get(5).ok_or_else(|| "Couldn't unwrap board")?.as_str());
+    let board = generate_board(caps.get(5).ok_or("Couldn't unwrap board")?.as_str());
 
     Ok(Wordle {
         number: number?,
@@ -96,10 +88,9 @@ fn parse_wordle(text: &str) -> Result<Wordle, String> {
 
 impl Handler {
     pub fn check_wordle(&self, msg: &Message) {
-        let w = parse_wordle(&msg.content);
-        if w.is_ok() {
+        if let Ok(w) = parse_wordle(&msg.content) {
             log_error(
-                DB::db_call(|db| db.insert_wordle(*msg.id.as_u64(), &w.unwrap())),
+                DB::db_call(|db| db.insert_wordle(*msg.id.as_u64(), &w)),
                 "Insert wordle",
             );
         }

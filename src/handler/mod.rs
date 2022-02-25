@@ -16,8 +16,8 @@ use serenity::{
     prelude::*,
 };
 use std::collections::HashMap;
-use std::collections::HashSet;
-use std::iter::FromIterator;
+
+
 
 use crate::db::DB;
 

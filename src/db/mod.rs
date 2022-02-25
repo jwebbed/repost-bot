@@ -80,17 +80,6 @@ impl DB {
         }
     }
 
-    pub fn get_oldest_message(&self, channel_id: u64) -> Result<Option<u64>> {
-        let conn = self.conn.borrow();
-        let ret = conn.query_row(
-            "SELECT id FROM message WHERE channel=(?1) ORDER BY created_at asc LIMIT 1",
-            [channel_id],
-            |row| row.get(0),
-        )?;
-
-        Ok(ret)
-    }
-
     pub fn get_newest_unchecked_message(&self, channel_id: u64) -> Result<Option<u64>> {
         let conn = self.conn.borrow();
 
