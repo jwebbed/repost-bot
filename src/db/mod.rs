@@ -369,7 +369,7 @@ impl DB {
             FROM wordle as W 
             JOIN message as M on W.message=M.id
             WHERE M.server=(?1)
-            GROUP BY W.author, W.number",
+            GROUP BY M.author, W.number",
         )?;
 
         let rows = stmt.query_map([server_id], |row| {
