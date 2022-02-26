@@ -57,7 +57,7 @@ impl Handler {
         let messages = http.get_messages(channel_id, &query).await?;
         if !messages.is_empty() {
             println!(
-                "received {} messages for {channel_id} and query_string {query}",
+                "received {} messages for channel id: {channel_id} and query_string {query}",
                 messages.len()
             );
             for mut msg in messages {
