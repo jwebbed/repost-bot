@@ -331,7 +331,6 @@ impl DB {
             Err(why) => Err(Error::from(why)),
         }
     }
-
     pub fn get_wordles_for_author(&self, author_id: u64, server_id: u64) -> Result<Vec<Wordle>> {
         let conn = self.conn.borrow();
         let mut stmt = conn.prepare(
@@ -343,6 +342,37 @@ impl DB {
         )?;
 
         let rows = stmt.query_map([author_id, server_id], |row| {
+            let mut board: [[LetterStatus; 5]; 6] = Default::default();
+            for i in 0..30 {
+                board[i / 5][i % 5] = row.get(i + 4)?;
+            }
+            Ok(Wordle {
+                number: row.get(1)?,
+                score: row.get(2)?,
+                hardmode: row.get(3)?,
+                board: WordleBoard(board),
+            })
+        })?;
+
+        let mut wordles = Vec::new();
+        for wordle in rows {
+            wordles.push(wordle?)
+        }
+
+        Ok(wordles)
+    }
+
+    pub fn get_wordles_for_server(&self, server_id: u64) -> Result<Vec<Wordle>> {
+        let conn = self.conn.borrow();
+        let mut stmt = conn.prepare(
+            "SELECT W.*, MIN(M.created_at)
+            FROM wordle as W 
+            JOIN message as M on W.message=M.id
+            WHERE M.server=(?1)
+            GROUP BY W.author, W.number",
+        )?;
+
+        let rows = stmt.query_map([server_id], |row| {
             let mut board: [[LetterStatus; 5]; 6] = Default::default();
             for i in 0..30 {
                 board[i / 5][i % 5] = row.get(i + 4)?;

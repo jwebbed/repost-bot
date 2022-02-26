@@ -16,7 +16,8 @@ impl Handler {
         match *command {
             "pins" => self.pins(ctx, msg).await,
             "reposts" => self.repost_cnt(ctx, msg).await,
-            "wordle score" => self.wordle_score(ctx, msg).await,
+            "wordle score" => self.wordle_score_user(ctx, msg).await,
+            "wordle server" => self.wordle_score_user(ctx, msg).await,
             _ => println!("Received unknown command: \"{}\"", command),
         }
     }

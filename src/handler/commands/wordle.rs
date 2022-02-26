@@ -40,7 +40,7 @@ fn wordle_score_distribution(wordles: &Vec<Wordle>) -> String {
 }
 
 impl Handler {
-    pub async fn wordle_score(&self, ctx: &Context, msg: &Message) {
+    pub async fn wordle_score_user(&self, ctx: &Context, msg: &Message) {
         let query = DB::db_call(|db| {
             db.get_wordles_for_author(*msg.author.id.as_u64(), *msg.guild_id.unwrap().as_u64())
         });
@@ -57,6 +57,25 @@ impl Handler {
             }
 
             match msg.reply(&ctx.http, resp).await {
+                Ok(_) => (),
+                Err(why) => println!("Failed to inform of wordle distribution: {:?}", why),
+            }
+        }
+    }
+
+    pub async fn wordle_score_server(&self, ctx: &Context, msg: &Message) {
+        let query = DB::db_call(|db| db.get_wordles_for_server(*msg.guild_id.unwrap().as_u64()));
+        if let Ok(wordles) = query {
+            match msg
+                .reply(
+                    &ctx.http,
+                    format!(
+                        "Wordle distribution for server\n{}",
+                        wordle_score_distribution(&wordles)
+                    ),
+                )
+                .await
+            {
                 Ok(_) => (),
                 Err(why) => println!("Failed to inform of wordle distribution: {:?}", why),
             }
