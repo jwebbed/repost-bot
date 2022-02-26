@@ -56,6 +56,10 @@ impl Handler {
 
         let messages = http.get_messages(channel_id, &query).await?;
         if !messages.is_empty() {
+            println!(
+                "received {} messages for {channel_id} and query_string {query}",
+                messages.len()
+            );
             for mut msg in messages {
                 if msg.author.bot {
                     continue;
@@ -266,15 +270,19 @@ impl EventHandler for Handler {
                     // check for most recent message
                     for id in channels.keys().map(|id| *id.as_u64()) {
                         match ctx.http.get_messages(id, "?limit=1").await {
-                            Ok(msg) => log_error(
-                                db.add_message(
-                                    msg[0].id,
-                                    *msg[0].channel_id.as_u64(),
-                                    *guild.as_u64(),
-                                    *msg[0].author.id.as_u64(),
-                                ),
-                                "db add message",
-                            ),
+                            Ok(msg) => {
+                                if !msg[0].author.bot {
+                                    log_error(
+                                        db.add_message(
+                                            msg[0].id,
+                                            *msg[0].channel_id.as_u64(),
+                                            *guild.as_u64(),
+                                            *msg[0].author.id.as_u64(),
+                                        ),
+                                        "db add message",
+                                    );
+                                }
+                            }
                             Err(why) => println!(
                                 "failed to load most recent message for id {} {:?}",
                                 id, why

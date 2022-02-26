@@ -82,20 +82,23 @@ impl DB {
 
     pub fn get_newest_unchecked_message(&self, channel_id: u64) -> Result<Option<u64>> {
         let conn = self.conn.borrow();
-
-        let ret = conn.query_row(
+        let mut stmt = conn.prepare_cached(
             "SELECT id FROM message 
             WHERE channel=(?1) AND (
                 parsed_repost=FALSE
                 OR parsed_wordle=FALSE
                 OR author IS NULL
             )
-            ORDER BY created_at desc
+            ORDER BY parsed_wordle, parsed_repost, created_at desc
             LIMIT 1",
-            [channel_id],
-            |row| row.get(0),
         )?;
-
+        let mut rows = stmt.query_map([channel_id], |row| Ok(row.get(0)?))?;
+        // I hate this but it works
+        let ret = if let Some(tmp) = rows.next() {
+            Some(tmp?)
+        } else {
+            None
+        };
         Ok(ret)
     }
 
@@ -110,7 +113,8 @@ impl DB {
         let mut stmt = conn.prepare(
             "INSERT INTO message (id, server, channel, created_at, author) 
             VALUES ( ?1, ?2, ?3, ?4, ?5 )
-            ON CONFLICT(id) DO NOTHING",
+            ON CONFLICT(id) DO UPDATE SET author=excluded.author
+            WHERE (message.author IS NULL)",
         )?;
 
         let msg_id64 = *message_id.as_u64();
