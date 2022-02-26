@@ -30,7 +30,7 @@ const IGNORED_DOMAINS: [&str; 3] = [
 fn ignored_domain(text: &str) -> bool {
     lazy_static! {
         static ref RE: Regex =
-            Regex::new(format!(r"^https?://({})/\S*", IGNORED_DOMAINS.join("|")).as_str()).unwrap();
+            Regex::new(format!(r"https?://({})/\S*", IGNORED_DOMAINS.join("|")).as_str()).unwrap();
     }
     RE.is_match(text)
 }
@@ -194,13 +194,13 @@ mod tests {
 
     #[test]
     fn test_ignore_globle() {
-        let message = r"🌎 Feb 24, 2022 🌍
+        let message = r"🌎 Feb 26, 2022 🌍
         Today's guesses: 17
-        Current streak: 1
-        Average guesses: 17
+        Current streak: 2
+        Average guesses: 16.5
         
-        https://globle-game.com/";
+        https://globle-game.com/ https://www.bbc.com/news/article";
 
-        assert_eq!(get_links(message).len(), 0);
+        assert_eq!(get_links(message).len(), 1);
     }
 }
