@@ -38,9 +38,6 @@ fn generate_board(text: &str) -> Result<WordleBoard, String> {
             let col = i % 5;
             ret[row][col] = *letter;
         }
-
-        println!("{:?}", ret);
-
         Ok(WordleBoard(ret))
     }
 }
