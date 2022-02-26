@@ -46,10 +46,17 @@ impl Handler {
         });
 
         if let Ok(wordles) = query {
-            match msg
-                .reply(&ctx.http, wordle_score_distribution(&wordles))
-                .await
-            {
+            let mut resp = wordle_score_distribution(&wordles);
+            if let Some(guild_id) = msg.guild_id {
+                let name = msg
+                    .author
+                    .nick_in(&ctx, guild_id)
+                    .await
+                    .unwrap_or(msg.author.name.clone());
+                resp = format!("Wordle distribution for {name}\n{resp}");
+            }
+
+            match msg.reply(&ctx.http, resp).await {
                 Ok(_) => (),
                 Err(why) => println!("Failed to inform of wordle distribution: {:?}", why),
             }
