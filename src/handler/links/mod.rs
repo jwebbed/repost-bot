@@ -32,7 +32,7 @@ const IGNORED_DOMAINS: [&str; 3] = [
 fn ignored_domain(text: &str) -> bool {
     lazy_static! {
         static ref RE: Regex =
-            Regex::new(format!(r"https?://({})/\S*", IGNORED_DOMAINS.join("|")).as_str()).unwrap();
+            Regex::new(format!(r"https?://({})/?\S*", IGNORED_DOMAINS.join("|")).as_str()).unwrap();
     }
     RE.is_match(text)
 }
@@ -201,8 +201,10 @@ mod tests {
         Current streak: 2
         Average guesses: 16.5
         
-        https://globle-game.com/ https://www.bbc.com/news/article";
+        https://globle-game.com/";
 
-        assert_eq!(get_links(message).len(), 1);
+        assert_eq!(get_links(message).len(), 0);
+        // Also assert with no trailing slash
+        assert_eq!(get_links("https://globle-game.com").len(), 0);
     }
 }
