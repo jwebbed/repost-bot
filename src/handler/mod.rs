@@ -1,5 +1,4 @@
 mod commands;
-mod filter;
 mod links;
 mod wordle;
 
@@ -56,10 +55,10 @@ impl Handler {
 
         let messages = http.get_messages(channel_id, &query).await?;
         if !messages.is_empty() {
-            println!(
+            /*println!(
                 "received {} messages for channel id: {channel_id} and query_string {query}",
                 messages.len()
-            );
+            );*/
             for mut msg in messages {
                 if msg.author.bot {
                     continue;

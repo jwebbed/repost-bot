@@ -1,5 +1,7 @@
-use super::filter::filtered_url;
+mod filter;
+
 use super::{log_error, Handler};
+use filter::filtered_url;
 
 use crate::db::DB;
 use crate::errors::{Error, Result};
