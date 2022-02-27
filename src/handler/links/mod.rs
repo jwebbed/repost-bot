@@ -1,17 +1,18 @@
 mod filter;
 
-use super::{log_error, Handler};
+use super::Handler;
 use filter::filtered_url;
 
 use crate::db::DB;
 use crate::errors::{Error, Result};
+use crate::structs::reply::{Reply, ReplyType};
 use crate::structs::Link;
 
 use humantime::format_duration;
 use lazy_static::lazy_static;
 use linkify::{LinkFinder, LinkKind};
 use regex::Regex;
-use serenity::{model::channel::Message, prelude::*};
+use serenity::model::channel::Message;
 use std::time::Duration;
 
 fn query_link_matches(url_str: &str, server: u64) -> Result<Vec<Link>> {
@@ -71,76 +72,53 @@ fn repost_text(msg: &Message, link: &Link) -> String {
     format!("{} {}", duration_text, link.message.uri())
 }
 
+fn repost_message<'a>(msg: &'a Message, reposts: &[Link]) -> Option<Reply<'a>> {
+    if !reposts.is_empty() {
+        let repost_str = if reposts.len() > 1 {
+            format!(
+                "\n{}",
+                reposts
+                    .iter()
+                    .map(|x| repost_text(msg, x))
+                    .collect::<Vec<String>>()
+                    .join("\n")
+            )
+        } else {
+            repost_text(msg, &reposts[0])
+        };
+
+        Some(Reply::new(
+            format!("🚨 REPOST 🚨 {repost_str}"),
+            ReplyType::Message(msg),
+        ))
+    } else {
+        None
+    }
+}
+
 impl Handler {
-    pub fn store_links_and_get_reposts(&self, msg: &Message) -> Vec<Link> {
+    pub fn store_links_and_get_reposts<'a>(&self, msg: &'a Message) -> Result<Option<Reply<'a>>> {
         let mut reposts = Vec::new();
         let server_id = *msg.guild_id.unwrap().as_u64();
         for link in get_links(&msg.content) {
             let filtered_link = match filtered_url(&link) {
                 Ok(url) => url,
                 Err(why) => {
-                    println!("Failed to filter url: {:?}", why);
+                    println!("Failed to filter url: {why:?}");
                     continue;
                 }
             };
-            match query_link_matches(filtered_link.as_str(), server_id) {
-                Ok(results) => {
-                    println!("Found {} reposts: {:?}", results.len(), results);
-                    for result in results {
-                        reposts.push(result);
-                    }
-                }
-                Err(why) => {
-                    println!("Failed to load reposts with err: {:?}", why);
-                }
-            };
+            reposts.extend(query_link_matches(filtered_link.as_str(), server_id)?);
 
             // finally insert this link into db
-            log_error(
-                DB::db_call(|db| db.insert_link(filtered_link.as_str(), *msg.id.as_u64())),
-                "Insert link",
-            );
+            DB::db_call(|db| db.insert_link(filtered_link.as_str(), *msg.id.as_u64()))?;
+        }
+        let len = reposts.len();
+        if len > 0 {
+            println!("Found {len} reposts: {reposts:?}");
         }
 
-        log_error(
-            DB::db_call(|db| db.mark_message_repost_checked(msg.id)),
-            "Set repost checked",
-        );
-
-        reposts
-    }
-
-    async fn reply_with_reposts(
-        &self,
-        ctx: &Context,
-        msg: &Message,
-        reposts: &[Link],
-    ) -> Result<()> {
-        if !reposts.is_empty() {
-            let repost_str = if reposts.len() > 1 {
-                format!(
-                    "\n{}",
-                    reposts
-                        .iter()
-                        .map(|x| repost_text(msg, x))
-                        .collect::<Vec<String>>()
-                        .join("\n")
-                )
-            } else {
-                repost_text(msg, &reposts[0])
-            };
-
-            msg.reply(&ctx.http, format!("🚨 REPOST 🚨 {}", repost_str))
-                .await?;
-        }
-        Ok(())
-    }
-    pub async fn check_links(&self, ctx: &Context, msg: &Message) {
-        let reposts = self.store_links_and_get_reposts(msg);
-        match self.reply_with_reposts(ctx, msg, &reposts).await {
-            Ok(_) => (),
-            Err(why) => println!("Failed to inform of REPOST: {:?}", why),
-        }
+        Ok(repost_message(msg, &reposts))
     }
 }
 

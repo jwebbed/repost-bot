@@ -91,11 +91,6 @@ impl Handler {
                 "Insert wordle",
             );
         }
-
-        log_error(
-            DB::db_call(|db| db.mark_message_wordle_checked(msg.id)),
-            "Set wordle checked",
-        );
     }
 }
 

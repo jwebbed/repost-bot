@@ -3,7 +3,7 @@ name = "repost-bot"
 version = "0.4.0"
 authors = ["Jonathan Webb <jonathan@webb.nyc>"]
 edition = "2021"
-rust-version = "1.59"
+rust-version = "1.58"
 license = "GPL-3.0-or-later"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -21,6 +21,7 @@ lazy_static = "1.4.0"
 humantime = "2.1.0"
 phf = { version = "0.9", features = ["macros"] }
 unicode-segmentation = "1.7"
+rand = "0.8"
 
 [dependencies.serenity]
 version = "0.10"

@@ -183,6 +183,34 @@ fn migration_4(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+const MIGRATION_5: [&str; 5] = [
+    "CREATE TABLE user ( 
+        id INTEGER PRIMARY KEY, 
+        username TEXT NOT NULL,
+        bot BOOL NOT NULL,
+        discriminator INTEGER NOT NULL
+    );",
+    "CREATE TABLE nickname ( 
+        nickname TEXT NOT NULL,
+        user INTEGER NOT NULL,
+        server INTEGER NOT NULL,
+        PRIMARY KEY (user, nickname, server),
+        FOREIGN KEY(server) REFERENCES server(id) ON DELETE CASCADE,
+        FOREIGN KEY(user) REFERENCES user(id) ON DELETE CASCADE
+    );",
+    "CREATE INDEX idx_user ON user (username, discriminator, bot);",
+    "CREATE UNIQUE INDEX idx_nickname ON nickname (server, user, nickname);",
+    "CREATE INDEX idx_msg ON message (server, channel, author);",
+];
+
+fn migration_5(conn: &Connection) -> Result<()> {
+    for migration in MIGRATION_5 {
+        conn.execute(migration, [])?;
+    }
+    queries::set_version(conn, 5)?;
+    Ok(())
+}
+
 fn delete_old_links(conn: &Connection) -> Result<()> {
     conn.execute(
         "DELETE FROM link WHERE id IN (
@@ -198,7 +226,7 @@ fn delete_old_links(conn: &Connection) -> Result<()> {
 
 pub fn migrate(conn: &mut Connection) -> Result<()> {
     // be sure to increment this everytime a new migration is added
-    const FINAL_VER: u32 = 4;
+    const FINAL_VER: u32 = 5;
 
     let ver = queries::get_version(conn)?;
 
@@ -223,6 +251,9 @@ pub fn migrate(conn: &mut Connection) -> Result<()> {
     if ver < 4 {
         migration_4(&tx)?;
     }
+    if ver < 5 {
+        migration_5(&tx)?;
+    }
 
     // delete old links we don't need
     delete_old_links(&tx)?;
@@ -237,16 +268,42 @@ pub fn migrate(conn: &mut Connection) -> Result<()> {
 mod tests {
     use super::*;
     use rusqlite::params;
+    use std::cmp::{Eq, PartialEq};
     use std::collections::HashMap;
 
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, PartialEq, Eq)]
     struct ColumnInfo {
-        pub cid: usize,
         pub name: String,
         pub type_name: String,
-        pub not_null: usize,
-        pub default_value: Option<String>,
+        pub notnull: usize,
+        pub default: Option<String>,
         pub pk: usize,
+    }
+
+    struct Table {
+        pub rows: HashMap<String, ColumnInfo>,
+    }
+
+    impl Table {
+        fn assert_row(
+            &self,
+            name: &str,
+            type_name: &str,
+            notnull: usize,
+            default: Option<&str>,
+            pk: usize,
+        ) {
+            assert_eq!(
+                &ColumnInfo {
+                    name: String::from(name),
+                    type_name: String::from(type_name),
+                    notnull,
+                    default: default.map(String::from),
+                    pk,
+                },
+                self.rows.get(name).unwrap()
+            );
+        }
     }
 
     fn get_migrated_db() -> Result<Connection> {
@@ -255,16 +312,15 @@ mod tests {
         Ok(conn)
     }
 
-    fn get_table_info(table_name: &str) -> Result<HashMap<String, ColumnInfo>> {
+    fn get_table_info(table_name: &str) -> Result<Table> {
         let conn = get_migrated_db()?;
         let mut stmt = conn.prepare("SELECT * FROM pragma_table_info(?1);")?;
         let rows = stmt.query_map(params![table_name], |row| {
             Ok(ColumnInfo {
-                cid: row.get(0)?,
                 name: row.get(1)?,
                 type_name: row.get(2)?,
-                not_null: row.get(3)?,
-                default_value: row.get(4)?,
+                notnull: row.get(3)?,
+                default: row.get(4)?,
                 pk: row.get(5)?,
             })
         })?;
@@ -274,21 +330,46 @@ mod tests {
             let info = row?;
             m.insert(info.name.clone(), info);
         }
-        Ok(m)
+        Ok(Table { rows: m })
     }
 
     #[test]
     fn test_channel_table() -> Result<()> {
-        let ti = get_table_info("channel")?;
-        println!("{:#?}", ti);
+        let ti = get_table_info("channel")?.rows;
+
+        // Expect only 4 columns in channel table
+        assert_eq!(ti.len(), 4);
 
         assert!(ti.contains_key("id"));
         assert!(ti.contains_key("name"));
         assert!(ti.contains_key("visible"));
         assert!(ti.contains_key("server"));
+        Ok(())
+    }
 
-        // Expect only 4 columns in channel table
-        assert_eq!(ti.len(), 4);
+    #[test]
+    fn test_user_table() -> Result<()> {
+        let table = get_table_info("user")?;
+
+        assert_eq!(table.rows.len(), 4);
+        table.assert_row("id", "INTEGER", 0, None, 1);
+        table.assert_row("username", "TEXT", 1, None, 0);
+        table.assert_row("bot", "BOOL", 1, None, 0);
+        table.assert_row("discriminator", "INTEGER", 1, None, 0);
+
+        Ok(())
+    }
+    #[test]
+    fn test_nickname_table() -> Result<()> {
+        let table = get_table_info("nickname")?;
+
+        assert_eq!(table.rows.len(), 3);
+        // should change pk to be a bool as we really don't care the pk number
+        // and only that it is actually a pk
+        table.assert_row("nickname", "TEXT", 1, None, 2);
+        table.assert_row("user", "INTEGER", 1, None, 1);
+        table.assert_row("server", "INTEGER", 1, None, 3);
+
         Ok(())
     }
 }

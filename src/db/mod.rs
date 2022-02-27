@@ -3,7 +3,7 @@ mod queries;
 
 use crate::errors::{Error, Result};
 use crate::structs::wordle::{LetterStatus, Wordle, WordleBoard};
-use crate::structs::{Link, Message, RepostCount};
+use crate::structs::{Link, Message, RepostCount, ReposterCount};
 use rusqlite::types::ToSql;
 use rusqlite::{params, Connection};
 use serenity::model::id::{ChannelId, GuildId, MessageId};
@@ -92,7 +92,7 @@ impl DB {
             ORDER BY parsed_wordle, parsed_repost, created_at desc
             LIMIT 1",
         )?;
-        let mut rows = stmt.query_map([channel_id], |row| Ok(row.get(0)?))?;
+        let mut rows = stmt.query_map([channel_id], |row| row.get(0))?;
         // I hate this but it works
         let ret = if let Some(tmp) = rows.next() {
             Some(tmp?)
@@ -130,6 +130,45 @@ impl DB {
             Ok(ret) => Ok(ret),
             Err(why) => Err(Error::from(why)),
         }
+    }
+
+    pub fn add_user(
+        &self,
+        user_id: u64,
+        username: &str,
+        bot: bool,
+        discriminator: u16,
+    ) -> Result<()> {
+        let conn = self.conn.borrow();
+        let mut stmt = conn.prepare(
+            "INSERT INTO user (id, username, bot, discriminator) 
+            VALUES ( ?1, ?2, ?3, ?4 )
+            ON CONFLICT(id) DO UPDATE SET 
+                username=excluded.username,
+                bot=excluded.bot,
+                discriminator=excluded.discriminator
+            WHERE (
+                user.username != excluded.username OR
+                user.bot != excluded.bot OR
+                user.discriminator != excluded.discriminator
+            )",
+        )?;
+
+        stmt.execute(params![user_id, username, bot, discriminator])?;
+
+        Ok(())
+    }
+
+    pub fn add_nickname(&self, user_id: u64, server_id: u64, nickname: &str) -> Result<()> {
+        let conn = self.conn.borrow();
+        let mut stmt = conn.prepare(
+            "INSERT OR IGNORE INTO nickname (user, server, nickname) 
+            VALUES ( ?1, ?2, ?3 )",
+        )?;
+
+        stmt.execute(params![user_id, server_id, nickname])?;
+
+        Ok(())
     }
 
     pub fn mark_message_repost_checked(&self, message_id: MessageId) -> Result<()> {
@@ -316,6 +355,41 @@ impl DB {
         Ok(reposts)
     }
 
+    pub fn get_top_reposters(&self, server_id: u64) -> Result<Vec<ReposterCount>> {
+        let conn = self.conn.borrow();
+        let mut stmt = conn.prepare(
+            "SELECT U.username, COUNT(*) as cnt
+            FROM message_link AS L1
+            JOIN (
+                SELECT MIN(ML.id) as id, ML.link
+                FROM message_link as ML
+                JOIN message as M on M.id = ML.message 
+                JOIN channel as C on M.channel=C.id
+                WHERE M.server=(?1) AND C.visible=TRUE
+                GROUP BY link
+            ) as L2 on L1.link=L2.link
+            JOIN message as M on M.id=L1.message
+            JOIN user as U on M.author=U.id
+            WHERE L1.id != L2.id
+            GROUP BY U.username
+            ORDER BY cnt desc",
+        )?;
+
+        let rows = stmt.query_map(params![server_id], |row| {
+            Ok(ReposterCount {
+                username: row.get(0)?,
+                count: row.get(1)?,
+            })
+        })?;
+
+        let mut reposters = Vec::new();
+        for repost in rows {
+            reposters.push(repost?)
+        }
+
+        Ok(reposters)
+    }
+
     pub fn insert_wordle(&self, message_id: u64, wordle: &Wordle) -> Result<()> {
         let conn = self.conn.borrow();
         let mut stmt = conn.prepare(&format!(
@@ -396,12 +470,12 @@ impl DB {
 
 impl Wordle {
     fn get_query_parts(&self, message_id: u64) -> Vec<Box<dyn ToSql>> {
-        let mut ret: Vec<Box<dyn ToSql>> = Vec::new();
-
-        ret.push(Box::new(message_id));
-        ret.push(Box::new(self.number));
-        ret.push(Box::new(self.score));
-        ret.push(Box::new(self.hardmode));
+        let mut ret: Vec<Box<dyn ToSql>> = vec![
+            Box::new(message_id),
+            Box::new(self.number),
+            Box::new(self.score),
+            Box::new(self.hardmode),
+        ];
 
         for element in self.board {
             ret.push(Box::new(element));

@@ -12,6 +12,8 @@ pub enum Error {
     Rusqlite(rusqlite::Error),
     Url(url::ParseError),
     Internal(String),
+    BotMessage,
+    ConstStr(&'static str),
 }
 
 impl Display for Error {
@@ -21,6 +23,8 @@ impl Display for Error {
             Error::Rusqlite(inner) => fmt::Display::fmt(&inner, f),
             Error::Url(inner) => fmt::Display::fmt(&inner, f),
             Error::Internal(inner) => f.write_str(inner),
+            Error::ConstStr(inner) => f.write_str(inner),
+            Error::BotMessage => f.write_str("Message is from a bot"),
         }
     }
 }

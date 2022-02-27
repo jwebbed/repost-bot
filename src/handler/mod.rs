@@ -2,13 +2,16 @@ mod commands;
 mod links;
 mod wordle;
 
-use crate::errors::Result;
+use crate::errors::{Error, Result};
+use crate::structs;
+use crate::structs::reply::Reply;
+use rand::random;
 use serenity::{
     async_trait,
-    http::Http,
     model::{
         channel::{Channel, ChannelType, GuildChannel, Message, MessageType},
         gateway::Ready,
+        guild::Member,
         id::{ChannelId, GuildId, MessageId},
         permissions::Permissions,
     },
@@ -24,7 +27,7 @@ pub struct Handler;
 pub fn log_error<T>(r: Result<T>, label: &str) {
     match r {
         Ok(_) => (),
-        Err(why) => println!("{} failed with error: {:?}", label, why),
+        Err(why) => println!("{label} failed with error: {why:?}"),
     }
 }
 
@@ -42,42 +45,41 @@ async fn bot_read_channel_permission(ctx: &Context, channel: &GuildChannel) -> b
 impl Handler {
     async fn process_old_messages(
         &self,
-        http: &Http,
+        ctx: &Context,
         channel_id: u64,
         server_id: u64,
     ) -> Result<()> {
         const LIMIT: u64 = 50;
         let db = DB::get_db()?;
         let query = match db.get_newest_unchecked_message(channel_id)? {
-            Some(value) => format!("?limit={}&around={}", LIMIT, value),
-            None => format!("?limit={}", LIMIT),
+            Some(value) => format!("?limit={LIMIT}&around={value}"),
+            None => {
+                // if there is nothing to query we really don't need to spam the api all the time
+                if random::<f64>() > 0.015 {
+                    return Ok(());
+                }
+                format!("?limit={LIMIT}")
+            }
         };
 
-        let messages = http.get_messages(channel_id, &query).await?;
+        let messages = ctx.http.get_messages(channel_id, &query).await?;
         if !messages.is_empty() {
-            /*println!(
+            println!(
                 "received {} messages for channel id: {channel_id} and query_string {query}",
                 messages.len()
-            );*/
+            );
             for mut msg in messages {
-                if msg.author.bot {
+                if msg.author.bot || msg.kind != MessageType::Regular {
                     continue;
                 }
                 if msg.guild_id.is_none() {
                     msg.guild_id = Some(GuildId(server_id));
                 }
-                let db_msg = db.add_message(
-                    msg.id,
-                    *msg.channel_id.as_u64(),
-                    *msg.guild_id.unwrap().as_u64(),
-                    *msg.author.id.as_u64(),
-                )?;
-
-                if !db_msg.parsed_repost {
-                    self.store_links_and_get_reposts(&msg);
-                }
-                if !db_msg.parsed_wordle {
-                    self.check_wordle(&msg);
+                if let Err(why) = self.process_message(ctx, &msg, false).await {
+                    println!(
+                        "Failed to process old message {} with error {why:?}",
+                        msg.id
+                    );
                 }
             }
         } else {
@@ -86,68 +88,106 @@ impl Handler {
 
         Ok(())
     }
+
+    /// takes the message from discord, stores it, and returns the db struct for further processing
+    async fn process_discord_message(
+        &self,
+        ctx: &Context,
+        msg: &Message,
+    ) -> Result<structs::link::Message> {
+        if msg.author.bot {
+            return Err(Error::BotMessage);
+        }
+
+        if msg.kind != MessageType::Regular {
+            return Err(Error::ConstStr("Message is not a regular text message"));
+        }
+
+        let db = DB::get_db()?;
+
+        let author_id = *msg.author.id.as_u64();
+        db.add_user(
+            author_id,
+            &msg.author.name,
+            msg.author.bot,
+            msg.author.discriminator,
+        )?;
+
+        let server = msg
+            .guild_id
+            .ok_or_else(|| Error::Internal("Guild id doesn't exist".to_string()))?;
+        let server_id = *server.as_u64();
+        let server_name = &server.name(&ctx).await;
+        db.update_server(server_id, server_name)?;
+
+        if let Some(nickname) = msg.author.nick_in(ctx, server_id).await {
+            db.add_nickname(author_id, server_id, &nickname)?;
+        }
+
+        // get channel id and load message
+        let channel_id = *msg.channel_id.as_u64();
+        let channel_name = msg.channel_id.name(&ctx.cache).await;
+        // we can assume channel is visible if we are receiving messages for it
+        db.update_channel(channel_id, server_id, &channel_name.unwrap(), true)?;
+
+        db.add_message(msg.id, channel_id, server_id, author_id)
+    }
+
+    async fn process_message<'a>(
+        &'a self,
+        ctx: &Context,
+        msg: &'a Message,
+        new: bool,
+    ) -> Result<Option<Reply<'a>>> {
+        // need to do this first, also does validation
+        let db_msg = self.process_discord_message(ctx, msg).await?;
+
+        let ret = if msg.content.starts_with("!rpm") {
+            if new {
+                self.handle_command(ctx, msg).await
+            } else {
+                None
+            }
+        } else {
+            if !db_msg.parsed_wordle {
+                self.check_wordle(msg);
+            }
+
+            // return the reply option from parsing reposts
+            if !db_msg.parsed_repost {
+                self.store_links_and_get_reposts(msg)?
+            } else {
+                None
+            }
+        };
+
+        DB::db_call(|db| db.mark_message_repost_checked(msg.id))?;
+        DB::db_call(|db| db.mark_message_wordle_checked(msg.id))?;
+
+        Ok(ret)
+    }
 }
 
 #[async_trait]
 impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: Message) {
-        // dont care about bot messages
-        if msg.author.bot {
-            return;
-        }
+        match self.process_message(&ctx, &msg, true).await {
+            Ok(result) => {
+                if let Some(reply) = result {
+                    if let Err(why) = reply.send(&ctx).await {
+                        println!("failed to send reply {why}");
+                    }
+                }
 
-        if msg.guild_id.is_none() {
-            println!("Guild id doesn't exist, for now we don't care about this");
-            return;
-        }
-
-        if msg.content.starts_with("!rpm") {
-            self.handle_command(&ctx, &msg).await;
-            return;
-        }
-
-        let db = match DB::get_db() {
-            Ok(db) => db,
-            Err(why) => {
-                println!("Error getting db: {:?}", why);
-                return;
+                if let Some(server) = msg.guild_id {
+                    log_error(
+                        self.process_old_messages(&ctx, *msg.channel_id.as_u64(), *server.as_u64())
+                            .await,
+                        "Process old messages",
+                    );
+                }
             }
-        };
-
-        let server = msg.guild_id.unwrap();
-        let server_id = *server.as_u64();
-        let server_name = server.name(&ctx.cache).await;
-        log_error(
-            db.update_server(server_id, &server_name),
-            "Db update server",
-        );
-
-        // get channel id and load message
-        let channel_id = *msg.channel_id.as_u64();
-        let channel_name = msg.channel_id.name(&ctx.cache).await;
-        // can assume channel is visible if we are receiving messages for it
-        log_error(
-            db.update_channel(channel_id, server_id, &channel_name.unwrap(), true),
-            "Db update channel",
-        );
-
-        // TODO: Add a author table and store author information, for now just
-        // store author_id on message. Will later populate the author table
-        // using the id snowflake as the primary key
-        let author_id = *msg.author.id.as_u64();
-        log_error(
-            db.add_message(msg.id, channel_id, server_id, author_id),
-            "Db add message",
-        );
-
-        if msg.kind == MessageType::Regular {
-            self.check_links(&ctx, &msg).await;
-            self.check_wordle(&msg);
-            log_error(
-                self.process_old_messages(&ctx.http, channel_id, server_id)
-                    .await,
-                "Process old messages",
-            );
+            Err(why) => println!("Failed to process messsage: {why}"),
         }
     }
 
@@ -161,7 +201,7 @@ impl EventHandler for Handler {
         let db = match DB::get_db() {
             Ok(db) => db,
             Err(why) => {
-                println!("Error getting db: {:?}", why);
+                println!("Error getting db: {why:?}");
                 return;
             }
         };
@@ -210,11 +250,43 @@ impl EventHandler for Handler {
     }
 
     async fn channel_delete(&self, _ctx: Context, channel: &GuildChannel) {
-        println!("recieved channel delete for {:?}", channel);
+        println!("recieved channel delete for {channel:?}");
         log_error(
             DB::db_call(|db| db.delete_channel(channel.id)),
             "Db delete channel",
         );
+    }
+
+    async fn guild_member_update(
+        &self,
+        _ctx: Context,
+        _old_if_available: Option<Member>,
+        new: Member,
+    ) {
+        let db = match DB::get_db() {
+            Ok(db) => db,
+            Err(why) => {
+                println!("Error getting db: {why:?}");
+                return;
+            }
+        };
+        let author_id = *new.user.id.as_u64();
+        if let Err(why) = db.add_user(
+            author_id,
+            &new.user.name,
+            new.user.bot,
+            new.user.discriminator,
+        ) {
+            println!("Error adding user: {why:?}");
+            return;
+        }
+
+        if let Some(nickname) = new.nick {
+            if let Err(why) = db.add_nickname(author_id, *new.guild_id.as_u64(), &nickname) {
+                println!("Error adding nickname: {why:?}");
+                return;
+            }
+        }
     }
 
     async fn ready(&self, _: Context, ready: Ready) {
@@ -225,7 +297,7 @@ impl EventHandler for Handler {
         let db = match DB::get_db() {
             Ok(db) => db,
             Err(why) => {
-                println!("Error getting db: {:?}", why);
+                println!("Error getting db: {why:?}");
                 return;
             }
         };
@@ -246,10 +318,7 @@ impl EventHandler for Handler {
                         .map(|c| String::from(c.name.as_str()))
                         .collect::<Vec<String>>();
 
-                    println!(
-                        "found server with id {} and channels {:?}",
-                        guild, channel_list
-                    );
+                    println!("found server with id {guild} and channels {channel_list:?}");
 
                     let channels_stored = match db.get_channel_list(guild) {
                         Ok(cs) => cs,

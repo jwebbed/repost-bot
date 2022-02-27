@@ -1,10 +1,10 @@
-use super::Handler;
-
 use crate::db::DB;
+use crate::errors::Result;
+use crate::structs::reply::{Reply, ReplyType};
 use crate::structs::wordle::Wordle;
 use serenity::{model::channel::Message, prelude::*};
 
-fn wordle_score_distribution(wordles: &Vec<Wordle>) -> String {
+fn wordle_score_distribution(wordles: &[Wordle]) -> String {
     fn parse_row(total: usize, count: usize, i: usize) -> String {
         let percent = (count as f32) / (total as f32) * 100.0;
         format!(
@@ -39,46 +39,33 @@ fn wordle_score_distribution(wordles: &Vec<Wordle>) -> String {
     ret
 }
 
-impl Handler {
-    pub async fn wordle_score_user(&self, ctx: &Context, msg: &Message) {
-        let query = DB::db_call(|db| {
-            db.get_wordles_for_author(*msg.author.id.as_u64(), *msg.guild_id.unwrap().as_u64())
-        });
+pub async fn wordle_score_user<'a>(ctx: &Context, msg: &'a Message) -> Result<Reply<'a>> {
+    let wordles = DB::db_call(|db| {
+        db.get_wordles_for_author(*msg.author.id.as_u64(), *msg.guild_id.unwrap().as_u64())
+    })?;
 
-        if let Ok(wordles) = query {
-            let mut resp = wordle_score_distribution(&wordles);
-            if let Some(guild_id) = msg.guild_id {
-                let name = msg
-                    .author
-                    .nick_in(&ctx, guild_id)
-                    .await
-                    .unwrap_or(msg.author.name.clone());
-                resp = format!("Wordle distribution for {name}\n{resp}");
-            }
+    let name = match msg.guild_id {
+        Some(guild_id) => msg.author.nick_in(&ctx, guild_id).await,
+        None => None,
+    };
 
-            match msg.reply(&ctx.http, resp).await {
-                Ok(_) => (),
-                Err(why) => println!("Failed to inform of wordle distribution: {:?}", why),
-            }
-        }
-    }
+    let resp = format!(
+        "Wordle distribution for {}\n{}",
+        name.unwrap_or_else(|| msg.author.name.clone()),
+        wordle_score_distribution(&wordles)
+    );
 
-    pub async fn wordle_score_server(&self, ctx: &Context, msg: &Message) {
-        let query = DB::db_call(|db| db.get_wordles_for_server(*msg.guild_id.unwrap().as_u64()));
-        if let Ok(wordles) = query {
-            match msg
-                .reply(
-                    &ctx.http,
-                    format!(
-                        "Wordle distribution for server\n{}",
-                        wordle_score_distribution(&wordles)
-                    ),
-                )
-                .await
-            {
-                Ok(_) => (),
-                Err(why) => println!("Failed to inform of wordle distribution: {:?}", why),
-            }
-        }
-    }
+    Ok(Reply::new(resp, ReplyType::Message(msg)))
+}
+
+pub fn wordle_score_server(msg: &Message) -> Result<Reply<'_>> {
+    let wordles = DB::db_call(|db| db.get_wordles_for_server(*msg.guild_id.unwrap().as_u64()))?;
+
+    Ok(Reply::new(
+        format!(
+            "Wordle distribution for server\n{}",
+            wordle_score_distribution(&wordles)
+        ),
+        ReplyType::Message(msg),
+    ))
 }

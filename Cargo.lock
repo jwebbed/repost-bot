@@ -851,6 +851,7 @@ dependencies = [
  "lazy_static",
  "linkify",
  "phf",
+ "rand 0.8.5",
  "regex",
  "rusqlite",
  "serenity",
