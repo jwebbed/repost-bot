@@ -48,12 +48,12 @@ async fn main() {
     migrate_db();
 
     let hmm = db::NewDB::get_task();
-
+    /*
     hmm.sender
         .send(db::Query {
             query: "example query",
         })
-        .await;
+        .await;*/
 
     // Create a new instance of the Client, logging in as a bot. This will
     // automatically prepend your bot token with "Bot ", which is a requirement

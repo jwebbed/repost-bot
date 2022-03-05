@@ -17,7 +17,9 @@ pub fn get_message(conn: &Connection, msg_id: u64) -> Result<Message> {
     const QUERY: &str =
         "SELECT id, server, channel, author, created_at, parsed_repost, parsed_wordle
         FROM message WHERE id=(?1)";
-    conn.query_row(QUERY, [msg_id], |row| {
+
+    let mut stmt = conn.prepare_cached(QUERY)?;
+    stmt.query_row([msg_id], |row| {
         Ok(Message {
             id: row.get(0)?,
             server: row.get(1)?,

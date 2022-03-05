@@ -6,14 +6,14 @@ use crate::structs::wordle::{LetterStatus, Wordle, WordleBoard};
 use crate::structs::{Link, Message, RepostCount, ReposterCount};
 
 use lazy_static::lazy_static;
-use log::info;
+use log::{info, warn};
 use rusqlite::types::ToSql;
 use rusqlite::{params, Connection};
 use serenity::model::id::{ChannelId, GuildId, MessageId};
 use std::cell::RefCell;
 use std::time::Instant;
 use tokio;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 fn repeat_vars(count: usize) -> String {
     assert_ne!(count, 0);
@@ -27,12 +27,19 @@ pub struct DB {
     conn: RefCell<Connection>,
 }
 
-pub struct Query {
-    pub query: &'static str,
+#[derive(Debug)]
+enum Query {
+    AddMessage {
+        message_id: MessageId,
+        channel_id: u64,
+        server_id: u64,
+        author_id: u64,
+        resp: oneshot::Sender<Result<Message>>,
+    },
 }
 
 pub struct NewDB {
-    pub sender: mpsc::Sender<Query>,
+    sender: mpsc::Sender<Query>,
 }
 
 impl NewDB {
@@ -52,10 +59,43 @@ impl NewDB {
             static ref DB: NewDB = {
                 let (sender, mut receiver) = mpsc::channel::<Query>(32);
                 tokio::spawn(async move {
-                    let conn = NewDB::get_connection();
+                    let conn = NewDB::get_connection().unwrap();
 
                     while let Some(query) = receiver.recv().await {
-                        info!("receiving the following query {}", query.query)
+                        info!("receiving the following query: {:?}", query);
+                        match query {
+                            Query::AddMessage {
+                                message_id,
+                                channel_id,
+                                server_id,
+                                author_id,
+                                resp,
+                            } => {
+                                let mut stmt = conn.prepare_cached(
+                                    "INSERT INTO message (id, server, channel, created_at, author)
+                                    VALUES ( ?1, ?2, ?3, ?4, ?5 )
+                                    ON CONFLICT(id) DO UPDATE SET author=excluded.author
+                                    WHERE (message.author IS NULL)",
+                                ).unwrap();
+                                let msg_id64 = *message_id.as_u64();
+                                stmt.execute(params![
+                                    msg_id64,
+                                    server_id,
+                                    channel_id,
+                                    message_id.created_at(),
+                                    author_id
+                                ])
+                                .unwrap();
+
+                                let ret = match queries::get_message(&conn, msg_id64) {
+                                    Ok(ret) => Ok(ret),
+                                    Err(why) => Err(Error::from(why)),
+                                };
+
+                                let _ = resp.send(ret);
+                            }
+                            _ => warn!("recieved some other query"),
+                        }
                     }
 
                     ()
@@ -65,6 +105,35 @@ impl NewDB {
         }
 
         &DB
+    }
+
+    pub async fn add_message(
+        &self,
+        message_id: MessageId,
+        channel_id: u64,
+        server_id: u64,
+        author_id: u64,
+    ) -> Result<Message> {
+        let now = Instant::now();
+
+        let (sender, receiver) = oneshot::channel();
+        let cmd = Query::AddMessage {
+            message_id,
+            channel_id,
+            server_id,
+            author_id,
+            resp: sender,
+        };
+
+        self.sender.send(cmd).await.unwrap();
+        let ret = receiver.await.unwrap();
+        info!("add message received ret: {ret:?}");
+
+        let elapsed = now.elapsed();
+        info!("newdb::add_message time elapsed: {:.2?}", elapsed);
+
+        ret
+        // ret
     }
 }
 

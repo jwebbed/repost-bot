@@ -22,7 +22,7 @@ use serenity::{
 use std::collections::HashMap;
 use std::time::Instant;
 
-use crate::db::DB;
+use crate::db::{NewDB, DB};
 
 pub struct Handler;
 
@@ -108,7 +108,7 @@ impl Handler {
         }
 
         let db = DB::get_db()?;
-
+        let newdb = NewDB::get_task();
         let author_id = *msg.author.id.as_u64();
         db.add_user(
             author_id,
@@ -134,7 +134,9 @@ impl Handler {
         // we can assume channel is visible if we are receiving messages for it
         db.update_channel(channel_id, server_id, &channel_name.unwrap(), true)?;
 
-        db.add_message(msg.id, channel_id, server_id, author_id)
+        newdb
+            .add_message(msg.id, channel_id, server_id, author_id)
+            .await
     }
 
     async fn process_message<'a>(
