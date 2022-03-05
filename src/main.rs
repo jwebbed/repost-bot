@@ -13,6 +13,7 @@ use log::LevelFilter;
 use log::{error, info, warn};
 use serenity::prelude::*;
 use simple_logger::SimpleLogger;
+use std::sync::Arc;
 use time::UtcOffset;
 
 use std::env;
@@ -45,6 +46,14 @@ async fn main() {
     let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
     // migrate the db
     migrate_db();
+
+    let hmm = db::NewDB::get_task();
+
+    hmm.sender
+        .send(db::Query {
+            query: "example query",
+        })
+        .await;
 
     // Create a new instance of the Client, logging in as a bot. This will
     // automatically prepend your bot token with "Bot ", which is a requirement

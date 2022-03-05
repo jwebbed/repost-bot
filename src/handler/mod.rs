@@ -20,6 +20,7 @@ use serenity::{
     prelude::*,
 };
 use std::collections::HashMap;
+use std::time::Instant;
 
 use crate::db::DB;
 
@@ -142,6 +143,7 @@ impl Handler {
         msg: &'a Message,
         new: bool,
     ) -> Result<Option<Reply<'a>>> {
+        let now = Instant::now();
         // need to do this first, also does validation
         let db_msg = self.process_discord_message(ctx, msg).await?;
 
@@ -166,6 +168,9 @@ impl Handler {
 
         DB::db_call(|db| db.mark_message_repost_checked(msg.id))?;
         DB::db_call(|db| db.mark_message_wordle_checked(msg.id))?;
+
+        let elapsed = now.elapsed();
+        info!("process_message time elapsed: {:.2?}", elapsed);
 
         Ok(ret)
     }

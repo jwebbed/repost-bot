@@ -5,11 +5,15 @@ use crate::errors::{Error, Result};
 use crate::structs::wordle::{LetterStatus, Wordle, WordleBoard};
 use crate::structs::{Link, Message, RepostCount, ReposterCount};
 
+use lazy_static::lazy_static;
 use log::info;
 use rusqlite::types::ToSql;
 use rusqlite::{params, Connection};
 use serenity::model::id::{ChannelId, GuildId, MessageId};
 use std::cell::RefCell;
+use std::time::Instant;
+use tokio;
+use tokio::sync::mpsc;
 
 fn repeat_vars(count: usize) -> String {
     assert_ne!(count, 0);
@@ -21,6 +25,47 @@ fn repeat_vars(count: usize) -> String {
 
 pub struct DB {
     conn: RefCell<Connection>,
+}
+
+pub struct Query {
+    pub query: &'static str,
+}
+
+pub struct NewDB {
+    pub sender: mpsc::Sender<Query>,
+}
+
+impl NewDB {
+    fn get_connection() -> Result<Connection> {
+        const IN_MEMORY_DB: bool = false;
+        let db = if IN_MEMORY_DB {
+            Connection::open_in_memory()?
+        } else {
+            let path = "./repost.db3";
+            Connection::open(&path)?
+        };
+
+        Ok(db)
+    }
+    pub fn get_task() -> &'static NewDB {
+        lazy_static! {
+            static ref DB: NewDB = {
+                let (sender, mut receiver) = mpsc::channel::<Query>(32);
+                tokio::spawn(async move {
+                    let conn = NewDB::get_connection();
+
+                    while let Some(query) = receiver.recv().await {
+                        info!("receiving the following query {}", query.query)
+                    }
+
+                    ()
+                });
+                NewDB { sender }
+            };
+        }
+
+        &DB
+    }
 }
 
 impl DB {
@@ -41,6 +86,7 @@ impl DB {
             conn: RefCell::new(DB::get_connection()?),
         })
     }
+
     pub fn db_call<F, T>(f: F) -> Result<T>
     where
         F: FnOnce(DB) -> Result<T>,
@@ -111,6 +157,7 @@ impl DB {
         server_id: u64,
         author_id: u64,
     ) -> Result<Message> {
+        let now = Instant::now();
         let conn = self.conn.borrow();
         let mut stmt = conn.prepare(
             "INSERT INTO message (id, server, channel, created_at, author) 
@@ -128,10 +175,15 @@ impl DB {
             author_id
         ])?;
 
-        match queries::get_message(&conn, msg_id64) {
+        let ret = match queries::get_message(&conn, msg_id64) {
             Ok(ret) => Ok(ret),
             Err(why) => Err(Error::from(why)),
-        }
+        };
+
+        let elapsed = now.elapsed();
+        info!("db::add_message time elapsed: {:.2?}", elapsed);
+
+        ret
     }
 
     pub fn add_user(
