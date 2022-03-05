@@ -126,9 +126,9 @@ impl Handler {
         let server_name = &server.name(&ctx).await;
         db.update_server(server_id, server_name)?;
 
-        if let Some(nickname) = msg.author.nick_in(ctx, server_id).await {
+        /*     if let Some(nickname) = msg.author.nick_in(ctx, server_id).await {
             db.add_nickname(author_id, server_id, &nickname)?;
-        }
+        }*/
 
         // get channel id and load message
         let channel_id = *msg.channel_id.as_u64();
@@ -136,7 +136,9 @@ impl Handler {
         // we can assume channel is visible if we are receiving messages for it
         db.update_channel(channel_id, server_id, &channel_name.unwrap(), true)?;
 
-        db.add_message(msg.id, channel_id, server_id, author_id)
+        newdb
+            .add_message(msg.id, channel_id, server_id, author_id)
+            .await
     }
 
     async fn process_message<'a>(
@@ -149,6 +151,11 @@ impl Handler {
         // need to do this first, also does validation
         let db_msg = self.process_discord_message(ctx, msg).await?;
 
+        info!(
+            "process_message time elapsed after adding to db: {:.2?}",
+            now.elapsed()
+        );
+
         let ret = if msg.content.starts_with("!rpm") {
             if new {
                 self.handle_command(ctx, msg).await
@@ -160,6 +167,11 @@ impl Handler {
                 self.check_wordle(msg);
             }
 
+            info!(
+                "process_message time elapsed after wordle: {:.2?}",
+                now.elapsed()
+            );
+
             // return the reply option from parsing reposts
             if !db_msg.parsed_repost {
                 self.store_links_and_get_reposts(msg)?
@@ -168,11 +180,15 @@ impl Handler {
             }
         };
 
+        info!(
+            "process_message time elapsed after reposts: {:.2?}",
+            now.elapsed()
+        );
+
         DB::db_call(|db| db.mark_message_repost_checked(msg.id))?;
         DB::db_call(|db| db.mark_message_wordle_checked(msg.id))?;
 
-        let elapsed = now.elapsed();
-        info!("process_message time elapsed: {:.2?}", elapsed);
+        info!("process_message time elapsed: {:.2?}", now.elapsed());
 
         Ok(ret)
     }
