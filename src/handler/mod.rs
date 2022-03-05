@@ -110,12 +110,14 @@ impl Handler {
         let db = DB::get_db()?;
         let newdb = NewDB::get_task();
         let author_id = *msg.author.id.as_u64();
-        db.add_user(
-            author_id,
-            &msg.author.name,
-            msg.author.bot,
-            msg.author.discriminator,
-        )?;
+        newdb
+            .add_user(
+                author_id,
+                &msg.author.name,
+                msg.author.bot,
+                msg.author.discriminator,
+            )
+            .await?;
 
         let server = msg
             .guild_id
@@ -134,9 +136,7 @@ impl Handler {
         // we can assume channel is visible if we are receiving messages for it
         db.update_channel(channel_id, server_id, &channel_name.unwrap(), true)?;
 
-        newdb
-            .add_message(msg.id, channel_id, server_id, author_id)
-            .await
+        db.add_message(msg.id, channel_id, server_id, author_id)
     }
 
     async fn process_message<'a>(

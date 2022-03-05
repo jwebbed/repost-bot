@@ -36,11 +36,32 @@ enum Query {
         author_id: u64,
         resp: oneshot::Sender<Result<Message>>,
     },
+    AddUser {
+        user_id: u64,
+        username: String,
+        bot: bool,
+        discriminator: u16,
+        resp: oneshot::Sender<Result<()>>,
+    },
 }
 
 pub struct NewDB {
     sender: mpsc::Sender<Query>,
 }
+
+struct CachedStatement<'a> {
+    pub stmt: rusqlite::Statement<'a>,
+}
+
+impl CachedStatement<'_> {
+    fn new<'a>(query: &'static str, conn: &'a rusqlite::Connection) -> CachedStatement<'a> {
+        let stmt = conn.prepare(query).unwrap();
+        CachedStatement { stmt }
+    }
+}
+
+unsafe impl Send for CachedStatement<'_> {}
+unsafe impl Sync for CachedStatement<'_> {}
 
 impl NewDB {
     fn get_connection() -> Result<Connection> {
@@ -60,6 +81,13 @@ impl NewDB {
                 let (sender, mut receiver) = mpsc::channel::<Query>(32);
                 tokio::spawn(async move {
                     let conn = NewDB::get_connection().unwrap();
+                    let mut insert_message_stmt = CachedStatement::new(
+                        "INSERT INTO message (id, server, channel, created_at, author)
+                        VALUES ( ?1, ?2, ?3, ?4, ?5 )
+                        ON CONFLICT(id) DO UPDATE SET author=excluded.author
+                        WHERE (message.author IS NULL)",
+                        &conn,
+                    );
 
                     while let Some(query) = receiver.recv().await {
                         info!("receiving the following query: {:?}", query);
@@ -71,21 +99,16 @@ impl NewDB {
                                 author_id,
                                 resp,
                             } => {
-                                let mut stmt = conn.prepare_cached(
-                                    "INSERT INTO message (id, server, channel, created_at, author)
-                                    VALUES ( ?1, ?2, ?3, ?4, ?5 )
-                                    ON CONFLICT(id) DO UPDATE SET author=excluded.author
-                                    WHERE (message.author IS NULL)",
-                                ).unwrap();
+                                let now = Instant::now();
                                 let msg_id64 = *message_id.as_u64();
-                                stmt.execute(params![
+
+                                if let Err(why) = insert_message_stmt.stmt.execute(params![
                                     msg_id64,
                                     server_id,
                                     channel_id,
                                     message_id.created_at(),
                                     author_id
-                                ])
-                                .unwrap();
+                                ]) {}
 
                                 let ret = match queries::get_message(&conn, msg_id64) {
                                     Ok(ret) => Ok(ret),
@@ -93,6 +116,39 @@ impl NewDB {
                                 };
 
                                 let _ = resp.send(ret);
+                                let elapsed = now.elapsed();
+                                info!(
+                                    "time inside Query::AddMessage time elapsed: {:.2?}",
+                                    elapsed
+                                );
+                            }
+                            Query::AddUser {
+                                user_id,
+                                username,
+                                bot,
+                                discriminator,
+                                resp,
+                            } => {
+                                let mut stmt = conn
+                                    .prepare_cached(
+                                        "INSERT INTO user (id, username, bot, discriminator)
+                                    VALUES ( ?1, ?2, ?3, ?4 )
+                                    ON CONFLICT(id) DO UPDATE SET 
+                                    username=excluded.username,
+                                    bot=excluded.bot,
+                                    discriminator=excluded.discriminator
+                                    WHERE (
+                                        user.username != excluded.username OR
+                                        user.bot != excluded.bot OR
+                                        user.discriminator != excluded.discriminator
+                                    )",
+                                    )
+                                    .unwrap();
+
+                                stmt.execute(params![user_id, username, bot, discriminator])
+                                    .unwrap();
+
+                                let _ = resp.send(Ok(()));
                             }
                         }
                     }
@@ -131,6 +187,26 @@ impl NewDB {
 
         ret
         // ret
+    }
+
+    pub async fn add_user(
+        &self,
+        user_id: u64,
+        username: &str,
+        bot: bool,
+        discriminator: u16,
+    ) -> Result<()> {
+        let (sender, receiver) = oneshot::channel();
+        let cmd = Query::AddUser {
+            user_id,
+            username: String::from(username),
+            bot,
+            discriminator,
+            resp: sender,
+        };
+
+        self.sender.send(cmd).await.unwrap();
+        receiver.await.unwrap()
     }
 }
 
