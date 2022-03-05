@@ -12,7 +12,7 @@ use rusqlite::{params, Connection};
 use serenity::model::id::{ChannelId, GuildId, MessageId};
 use std::cell::RefCell;
 use std::time::Instant;
-use tokio;
+
 use tokio::sync::{mpsc, oneshot};
 
 fn repeat_vars(count: usize) -> String {
@@ -98,7 +98,7 @@ impl NewDB {
                         }
                     }
 
-                    ()
+                    
                 });
                 NewDB { sender }
             };
