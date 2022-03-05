@@ -94,11 +94,8 @@ impl NewDB {
 
                                 let _ = resp.send(ret);
                             }
-                            _ => warn!("recieved some other query"),
                         }
                     }
-
-                    
                 });
                 NewDB { sender }
             };
