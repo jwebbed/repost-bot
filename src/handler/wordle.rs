@@ -1,4 +1,4 @@
-use super::{log_error, Handler};
+use super::{log_error};
 use crate::db::DB;
 use crate::structs::wordle::{LetterStatus, Wordle, WordleBoard};
 use lazy_static::lazy_static;
@@ -83,14 +83,12 @@ fn parse_wordle(text: &str) -> Result<Wordle, String> {
     })
 }
 
-impl Handler {
-    pub fn check_wordle(&self, msg: &Message) {
-        if let Ok(w) = parse_wordle(&msg.content) {
-            log_error(
-                DB::db_call(|db| db.insert_wordle(*msg.id.as_u64(), &w)),
-                "Insert wordle",
-            );
-        }
+pub fn check_wordle(msg: &Message) {
+    if let Ok(w) = parse_wordle(&msg.content) {
+        log_error(
+            DB::db_call(|db| db.insert_wordle(*msg.id.as_u64(), &w)),
+            "Insert wordle",
+        );
     }
 }
 

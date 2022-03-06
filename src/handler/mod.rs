@@ -7,6 +7,7 @@ use crate::errors::{Error, Result};
 use crate::structs;
 use crate::structs::reply::Reply;
 
+
 use log::{debug, error, info, trace, warn};
 use rand::random;
 use serenity::{
@@ -22,6 +23,12 @@ use serenity::{
 };
 use std::collections::HashMap;
 use std::time::Instant;
+use std::{
+    sync::{
+        Arc,
+    },
+    time::Duration,
+};
 
 pub struct Handler;
 
@@ -44,158 +51,145 @@ async fn bot_read_channel_permission(ctx: &Context, channel: &GuildChannel) -> b
     }
 }
 
+/// takes the message from discord, stores it, and returns the db struct for further processing
+async fn process_discord_message(ctx: &Context, msg: &Message) -> Result<structs::link::Message> {
+    if msg.author.bot {
+        return Err(Error::BotMessage);
+    }
+
+    if msg.kind != MessageType::Regular {
+        return Err(Error::ConstStr("Message is not a regular text message"));
+    }
+    let now = Instant::now();
+
+    let db = DB::get_db()?;
+
+    let author_id = *msg.author.id.as_u64();
+    db.add_user(
+        author_id,
+        &msg.author.name,
+        msg.author.bot,
+        msg.author.discriminator,
+    )?;
+
+    let server = msg
+        .guild_id
+        .ok_or_else(|| Error::Internal("Guild id doesn't exist".to_string()))?;
+    let server_id = *server.as_u64();
+    let server_name = &server.name(&ctx).await;
+    db.update_server(server_id, server_name)?;
+
+    // get channel id and load message
+    let channel_id = *msg.channel_id.as_u64();
+    let channel_name = msg.channel_id.name(&ctx.cache).await;
+    // we can assume channel is visible if we are receiving messages for it
+    db.update_channel(channel_id, server_id, &channel_name.unwrap(), true)?;
+
+    let ret = db.add_message(msg.id, channel_id, server_id, author_id);
+
+    debug!(
+        "process_discord_message time elapsed: {:.2?}",
+        now.elapsed()
+    );
+
+    ret
+}
+
+async fn process_message<'a>(
+    ctx: &Context,
+    msg: &'a Message,
+    new: bool,
+) -> Result<Option<Reply<'a>>> {
+    // need to do this first, also does validation
+    let db_msg = process_discord_message(ctx, msg).await?;
+
+    let ret = if msg.content.starts_with("!rpm") {
+        if new {
+            commands::handle_command(ctx, msg).await
+        } else {
+            None
+        }
+    } else {
+        if !db_msg.parsed_wordle {
+            wordle::check_wordle(msg);
+        }
+
+        // return the reply option from parsing reposts
+        if !db_msg.parsed_repost {
+            links::store_links_and_get_reposts(msg)?
+        } else {
+            None
+        }
+    };
+
+    DB::db_call(|db| db.mark_message_all_checked(msg.id))?;
+
+    Ok(ret)
+}
+
+/// takes the message from discord and does slow, less important operations
+async fn process_discord_message_slow(ctx: &Context, msg: &Message) -> Result<()> {
+    let server_id = msg
+        .guild_id
+        .ok_or_else(|| Error::Internal("Guild id doesn't exist".to_string()))?;
+
+    if let Some(nickname) = msg.author.nick_in(ctx, server_id).await {
+        let db = DB::get_db()?;
+        db.add_nickname(*msg.author.id.as_u64(), *server_id.as_u64(), &nickname)?;
+    }
+
+    Ok(())
+}
+
+async fn process_old_messages(ctx: &Context, channel_id: &u64, server_id: &u64) -> Result<usize> {
+    const LIMIT: u64 = 50;
+    let db = DB::get_db()?;
+    let query = match db.get_newest_unchecked_message(*channel_id)? {
+        Some(value) => format!("?limit={LIMIT}&around={value}"),
+        None => {
+            // if there is nothing to query we really don't need to spam the api all the time
+            if random::<f64>() > 0.015 {
+                return Ok(0);
+            }
+            format!("?limit={LIMIT}")
+        }
+    };
+
+    let messages = ctx.http.get_messages(*channel_id, &query).await?;
+    if !messages.is_empty() {
+        let len = messages.len();
+        info!("received {len} messages for channel id: {channel_id} and query_string {query}");
+        for mut msg in messages {
+            if msg.author.bot || msg.kind != MessageType::Regular {
+                continue;
+            }
+            if msg.guild_id.is_none() {
+                msg.guild_id = Some(GuildId(*server_id));
+            }
+            if let Err(why) = process_message(ctx, &msg, false).await {
+                warn!(
+                    "Failed to process old message {} with error {why:?}",
+                    msg.id
+                );
+            }
+        }
+        Ok(len)
+    } else {
+        debug!("received no messages to process");
+        Ok(0)
+    }
+}
+
 impl Handler {
     pub const fn new() -> Handler {
         Handler {}
-    }
-
-    async fn process_old_messages(
-        &self,
-        ctx: &Context,
-        channel_id: u64,
-        server_id: u64,
-    ) -> Result<()> {
-        const LIMIT: u64 = 50;
-        let db = DB::get_db()?;
-        let query = match db.get_newest_unchecked_message(channel_id)? {
-            Some(value) => format!("?limit={LIMIT}&around={value}"),
-            None => {
-                // if there is nothing to query we really don't need to spam the api all the time
-                if random::<f64>() > 0.015 {
-                    trace!("random below threshold, not querying for new messages");
-                    return Ok(());
-                }
-                format!("?limit={LIMIT}")
-            }
-        };
-
-        let messages = ctx.http.get_messages(channel_id, &query).await?;
-        if !messages.is_empty() {
-            info!(
-                "received {} messages for channel id: {channel_id} and query_string {query}",
-                messages.len()
-            );
-            for mut msg in messages {
-                if msg.author.bot || msg.kind != MessageType::Regular {
-                    continue;
-                }
-                if msg.guild_id.is_none() {
-                    msg.guild_id = Some(GuildId(server_id));
-                }
-                if let Err(why) = self.process_message(ctx, &msg, false).await {
-                    warn!(
-                        "Failed to process old message {} with error {why:?}",
-                        msg.id
-                    );
-                }
-            }
-        } else {
-            debug!("received no messages to process")
-        }
-
-        Ok(())
-    }
-
-    /// takes the message from discord, stores it, and returns the db struct for further processing
-    async fn process_discord_message(
-        &self,
-        ctx: &Context,
-        msg: &Message,
-    ) -> Result<structs::link::Message> {
-        if msg.author.bot {
-            return Err(Error::BotMessage);
-        }
-
-        if msg.kind != MessageType::Regular {
-            return Err(Error::ConstStr("Message is not a regular text message"));
-        }
-        let now = Instant::now();
-
-        let db = DB::get_db()?;
-
-        let author_id = *msg.author.id.as_u64();
-        db.add_user(
-            author_id,
-            &msg.author.name,
-            msg.author.bot,
-            msg.author.discriminator,
-        )?;
-
-        let server = msg
-            .guild_id
-            .ok_or_else(|| Error::Internal("Guild id doesn't exist".to_string()))?;
-        let server_id = *server.as_u64();
-        let server_name = &server.name(&ctx).await;
-        db.update_server(server_id, server_name)?;
-
-        // get channel id and load message
-        let channel_id = *msg.channel_id.as_u64();
-        let channel_name = msg.channel_id.name(&ctx.cache).await;
-        // we can assume channel is visible if we are receiving messages for it
-        db.update_channel(channel_id, server_id, &channel_name.unwrap(), true)?;
-
-        let ret = db.add_message(msg.id, channel_id, server_id, author_id);
-
-        debug!(
-            "process_discord_message time elapsed: {:.2?}",
-            now.elapsed()
-        );
-
-        ret
-    }
-
-    /// takes the message from discord and does slow, less important operations
-    async fn process_discord_message_slow(&self, ctx: &Context, msg: &Message) -> Result<()> {
-        let server_id = msg
-            .guild_id
-            .ok_or_else(|| Error::Internal("Guild id doesn't exist".to_string()))?;
-
-        if let Some(nickname) = msg.author.nick_in(ctx, server_id).await {
-            let db = DB::get_db()?;
-            db.add_nickname(*msg.author.id.as_u64(), *server_id.as_u64(), &nickname)?;
-        }
-
-        Ok(())
-    }
-
-    async fn process_message<'a>(
-        &'a self,
-        ctx: &Context,
-        msg: &'a Message,
-        new: bool,
-    ) -> Result<Option<Reply<'a>>> {
-        // need to do this first, also does validation
-        let db_msg = self.process_discord_message(ctx, msg).await?;
-
-        let ret = if msg.content.starts_with("!rpm") {
-            if new {
-                self.handle_command(ctx, msg).await
-            } else {
-                None
-            }
-        } else {
-            if !db_msg.parsed_wordle {
-                self.check_wordle(msg);
-            }
-
-            // return the reply option from parsing reposts
-            if !db_msg.parsed_repost {
-                self.store_links_and_get_reposts(msg)?
-            } else {
-                None
-            }
-        };
-
-        DB::db_call(|db| db.mark_message_all_checked(msg.id))?;
-
-        Ok(ret)
     }
 }
 
 #[async_trait]
 impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: Message) {
-        match self.process_message(&ctx, &msg, true).await {
+        match process_message(&ctx, &msg, true).await {
             Ok(result) => {
                 if let Some(reply) = result {
                     if let Err(why) = reply.send(&ctx).await {
@@ -203,15 +197,7 @@ impl EventHandler for Handler {
                     }
                 }
 
-                if let Some(server) = msg.guild_id {
-                    log_error(
-                        self.process_old_messages(&ctx, *msg.channel_id.as_u64(), *server.as_u64())
-                            .await,
-                        "Process old messages",
-                    );
-                }
-
-                if let Err(why) = self.process_discord_message_slow(&ctx, &msg).await {
+                if let Err(why) = process_discord_message_slow(&ctx, &msg).await {
                     warn!("failed process discord messages slow with error: {why:?}");
                 }
             }
@@ -329,8 +315,9 @@ impl EventHandler for Handler {
                 return;
             }
         };
+        let ctx = Arc::new(ctx);
         for guild in guilds {
-            match guild.channels(&ctx.http).await {
+            match guild.channels(&ctx).await {
                 Ok(all_channels) => {
                     let mut mchannels = HashMap::new();
                     for (k, v) in all_channels {
@@ -347,7 +334,33 @@ impl EventHandler for Handler {
                         .collect::<Vec<String>>();
 
                     info!("found server with id {guild} and channels {channel_list:?}");
-
+                    for channel in channels.keys() {
+                        let ctxn = Arc::clone(&ctx);
+                        let c = Arc::new(*channel.as_u64());
+                        let g = Arc::new(*guild.as_u64());
+                        tokio::spawn(async move {
+                            loop {
+                                let c1 = Arc::clone(&c);
+                                let g1 = Arc::clone(&g);
+                                let tts = match process_old_messages(&Arc::clone(&ctxn), &c1, &g1)
+                                    .await
+                                {
+                                    Ok(val) => {
+                                        if val == 0 {
+                                            10 * 60
+                                        } else {
+                                            120
+                                        }
+                                    }
+                                    Err(why) => {
+                                        warn!("process old messages with err {why:?}");
+                                        240
+                                    }
+                                };
+                                tokio::time::sleep(Duration::from_secs(tts)).await;
+                            }
+                        });
+                    }
                     let channels_stored = match db.get_channel_list(guild) {
                         Ok(cs) => cs,
                         Err(_why) => Vec::new(),

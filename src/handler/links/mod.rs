@@ -1,6 +1,5 @@
 mod filter;
 
-use super::Handler;
 use filter::filtered_url;
 
 use crate::db::DB;
@@ -97,30 +96,28 @@ fn repost_message<'a>(msg: &'a Message, reposts: &[Link]) -> Option<Reply<'a>> {
     }
 }
 
-impl Handler {
-    pub fn store_links_and_get_reposts<'a>(&self, msg: &'a Message) -> Result<Option<Reply<'a>>> {
-        let mut reposts = Vec::new();
-        let server_id = *msg.guild_id.unwrap().as_u64();
-        for link in get_links(&msg.content) {
-            let filtered_link = match filtered_url(&link) {
-                Ok(url) => url,
-                Err(why) => {
-                    error!("Failed to filter url: {why:?}");
-                    continue;
-                }
-            };
-            reposts.extend(query_link_matches(filtered_link.as_str(), server_id)?);
+pub fn store_links_and_get_reposts(msg: &Message) -> Result<Option<Reply<'_>>> {
+    let mut reposts = Vec::new();
+    let server_id = *msg.guild_id.unwrap().as_u64();
+    for link in get_links(&msg.content) {
+        let filtered_link = match filtered_url(&link) {
+            Ok(url) => url,
+            Err(why) => {
+                error!("Failed to filter url: {why:?}");
+                continue;
+            }
+        };
+        reposts.extend(query_link_matches(filtered_link.as_str(), server_id)?);
 
-            // finally insert this link into db
-            DB::db_call(|db| db.insert_link(filtered_link.as_str(), *msg.id.as_u64()))?;
-        }
-        let len = reposts.len();
-        if len > 0 {
-            info!("Found {len} reposts: {reposts:?}");
-        }
-
-        Ok(repost_message(msg, &reposts))
+        // finally insert this link into db
+        DB::db_call(|db| db.insert_link(filtered_link.as_str(), *msg.id.as_u64()))?;
     }
+    let len = reposts.len();
+    if len > 0 {
+        info!("Found {len} reposts: {reposts:?}");
+    }
+
+    Ok(repost_message(msg, &reposts))
 }
 
 #[cfg(test)]
