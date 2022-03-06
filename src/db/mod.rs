@@ -173,19 +173,14 @@ impl DB {
         Ok(())
     }
 
-    pub fn mark_message_repost_checked(&self, message_id: MessageId) -> Result<()> {
+    pub fn mark_message_all_checked(&self, message_id: MessageId) -> Result<()> {
+        // will probably want to break this back up to seperate functions
+        // at some point just not important right now
         let conn = self.conn.borrow();
         conn.execute(
-            "UPDATE message SET parsed_repost=TRUE WHERE id=(?1)",
-            [*message_id.as_u64()],
-        )?;
-        Ok(())
-    }
-
-    pub fn mark_message_wordle_checked(&self, message_id: MessageId) -> Result<()> {
-        let conn = self.conn.borrow();
-        conn.execute(
-            "UPDATE message SET parsed_wordle=TRUE WHERE id=(?1)",
+            "UPDATE message 
+            SET parsed_repost=TRUE, parsed_wordle=TRUE 
+            WHERE id=(?1)",
             [*message_id.as_u64()],
         )?;
         Ok(())

@@ -2,6 +2,7 @@ mod commands;
 mod links;
 mod wordle;
 
+use crate::db::DB;
 use crate::errors::{Error, Result};
 use crate::structs;
 use crate::structs::reply::Reply;
@@ -20,8 +21,7 @@ use serenity::{
     prelude::*,
 };
 use std::collections::HashMap;
-
-use crate::db::DB;
+use std::time::Instant;
 
 pub struct Handler;
 
@@ -45,6 +45,10 @@ async fn bot_read_channel_permission(ctx: &Context, channel: &GuildChannel) -> b
 }
 
 impl Handler {
+    pub const fn new() -> Handler {
+        Handler {}
+    }
+
     async fn process_old_messages(
         &self,
         ctx: &Context,
@@ -105,6 +109,7 @@ impl Handler {
         if msg.kind != MessageType::Regular {
             return Err(Error::ConstStr("Message is not a regular text message"));
         }
+        let now = Instant::now();
 
         let db = DB::get_db()?;
 
@@ -123,17 +128,34 @@ impl Handler {
         let server_name = &server.name(&ctx).await;
         db.update_server(server_id, server_name)?;
 
-        if let Some(nickname) = msg.author.nick_in(ctx, server_id).await {
-            db.add_nickname(author_id, server_id, &nickname)?;
-        }
-
         // get channel id and load message
         let channel_id = *msg.channel_id.as_u64();
         let channel_name = msg.channel_id.name(&ctx.cache).await;
         // we can assume channel is visible if we are receiving messages for it
         db.update_channel(channel_id, server_id, &channel_name.unwrap(), true)?;
 
-        db.add_message(msg.id, channel_id, server_id, author_id)
+        let ret = db.add_message(msg.id, channel_id, server_id, author_id);
+
+        debug!(
+            "process_discord_message time elapsed: {:.2?}",
+            now.elapsed()
+        );
+
+        ret
+    }
+
+    /// takes the message from discord and does slow, less important operations
+    async fn process_discord_message_slow(&self, ctx: &Context, msg: &Message) -> Result<()> {
+        let server_id = msg
+            .guild_id
+            .ok_or_else(|| Error::Internal("Guild id doesn't exist".to_string()))?;
+
+        if let Some(nickname) = msg.author.nick_in(ctx, server_id).await {
+            let db = DB::get_db()?;
+            db.add_nickname(*msg.author.id.as_u64(), *server_id.as_u64(), &nickname)?;
+        }
+
+        Ok(())
     }
 
     async fn process_message<'a>(
@@ -164,8 +186,7 @@ impl Handler {
             }
         };
 
-        DB::db_call(|db| db.mark_message_repost_checked(msg.id))?;
-        DB::db_call(|db| db.mark_message_wordle_checked(msg.id))?;
+        DB::db_call(|db| db.mark_message_all_checked(msg.id))?;
 
         Ok(ret)
     }
@@ -178,7 +199,7 @@ impl EventHandler for Handler {
             Ok(result) => {
                 if let Some(reply) = result {
                     if let Err(why) = reply.send(&ctx).await {
-                        error!("failed to send reply {why}");
+                        error!("failed to send reply {why:?}");
                     }
                 }
 
@@ -189,8 +210,12 @@ impl EventHandler for Handler {
                         "Process old messages",
                     );
                 }
+
+                if let Err(why) = self.process_discord_message_slow(&ctx, &msg).await {
+                    warn!("failed process discord messages slow with error: {why:?}");
+                }
             }
-            Err(why) => warn!("failed to process messsage: {why}"),
+            Err(why) => warn!("failed to process messsage: {why:?}"),
         }
     }
 
