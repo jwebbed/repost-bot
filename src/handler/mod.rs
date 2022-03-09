@@ -7,9 +7,9 @@ use crate::errors::{Error, Result};
 use crate::structs;
 use crate::structs::reply::Reply;
 
-
 use log::{debug, error, info, trace, warn};
-use rand::random;
+use rand::seq::SliceRandom;
+use rand::{random, thread_rng};
 use serenity::{
     async_trait,
     model::{
@@ -22,13 +22,9 @@ use serenity::{
     prelude::*,
 };
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::time::Instant;
-use std::{
-    sync::{
-        Arc,
-    },
-    time::Duration,
-};
+use std::{sync::Arc, time::Duration};
 
 pub struct Handler;
 
@@ -74,7 +70,7 @@ async fn process_discord_message(ctx: &Context, msg: &Message) -> Result<structs
 
     let server = msg
         .guild_id
-        .ok_or_else(|| Error::Internal("Guild id doesn't exist".to_string()))?;
+        .ok_or_else(|| Error::ConstStr("Guild id doesn't exist on message"))?;
     let server_id = *server.as_u64();
     let server_name = &server.name(&ctx).await;
     db.update_server(server_id, server_name)?;
@@ -141,25 +137,38 @@ async fn process_discord_message_slow(ctx: &Context, msg: &Message) -> Result<()
     Ok(())
 }
 
-async fn process_old_messages(ctx: &Context, channel_id: &u64, server_id: &u64) -> Result<usize> {
+async fn process_old_messages(ctx: &Context, server_id: &u64) -> Result<usize> {
     const LIMIT: u64 = 50;
     let db = DB::get_db()?;
-    let query = match db.get_newest_unchecked_message(*channel_id)? {
-        Some(value) => format!("?limit={LIMIT}&around={value}"),
+    let (channel_id, query, base_msg) = match db.get_newest_unchecked_message(*server_id)? {
+        Some(msg) => (
+            msg.channel,
+            format!("?limit={LIMIT}&around={}", msg.id),
+            Some(msg.id),
+        ),
         None => {
             // if there is nothing to query we really don't need to spam the api all the time
             if random::<f64>() > 0.015 {
                 return Ok(0);
             }
-            format!("?limit={LIMIT}")
+            let channels = db.get_known_channels(*server_id)?;
+            let mut rng = thread_rng();
+            let channel = channels
+                .choose(&mut rng)
+                .ok_or(Error::ConstStr("Rng choose failed for some reason"))?;
+
+            (channel.id, format!("?limit={LIMIT}"), None)
         }
     };
 
-    let messages = ctx.http.get_messages(*channel_id, &query).await?;
+    let messages = ctx.http.get_messages(channel_id, &query).await?;
     if !messages.is_empty() {
         let len = messages.len();
         info!("received {len} messages for channel id: {channel_id} and query_string {query}");
+        let mut ids = HashSet::with_capacity(len);
         for mut msg in messages {
+            ids.insert(*msg.id.as_u64());
+
             if msg.author.bot || msg.kind != MessageType::Regular {
                 continue;
             }
@@ -173,6 +182,14 @@ async fn process_old_messages(ctx: &Context, channel_id: &u64, server_id: &u64) 
                 );
             }
         }
+
+        if let Some(base_msg) = base_msg {
+            if !ids.contains(&base_msg) {
+                warn!("did not received base msg id {base_msg} when querying for messages");
+                db.soft_delete_message(base_msg)?;
+            }
+        }
+
         Ok(len)
     } else {
         debug!("received no messages to process");
@@ -198,10 +215,10 @@ impl EventHandler for Handler {
                 }
 
                 if let Err(why) = process_discord_message_slow(&ctx, &msg).await {
-                    warn!("failed process discord messages slow with error: {why:?}");
+                    error!("failed process discord messages slow with error: {why:?}");
                 }
             }
-            Err(why) => warn!("failed to process messsage: {why:?}"),
+            Err(why) => error!("failed to process messsage: {why:?}"),
         }
     }
 
@@ -252,6 +269,8 @@ impl EventHandler for Handler {
         match new.guild() {
             Some(channel) => {
                 let visible = bot_read_channel_permission(&ctx, &channel).await;
+                let (id, name, server) = (channel.id, channel.name, *channel.guild_id.as_u64());
+                info!("received channel update for channel id {id} with name {name} in server {server}, visibility is now: {visible}");
                 log_error(
                     DB::db_call(|db| db.update_channel_visibility(channel.id, visible)),
                     "Updating visibility",
@@ -317,6 +336,28 @@ impl EventHandler for Handler {
         };
         let ctx = Arc::new(ctx);
         for guild in guilds {
+            let ctxn = Arc::clone(&ctx);
+            let g = Arc::new(*guild.as_u64());
+            tokio::spawn(async move {
+                loop {
+                    let g1 = Arc::clone(&g);
+                    let tts = match process_old_messages(&Arc::clone(&ctxn), &g1).await {
+                        Ok(val) => {
+                            if val == 0 {
+                                10 * 60
+                            } else {
+                                45
+                            }
+                        }
+                        Err(why) => {
+                            warn!("process old messages with err {why:?}");
+                            240
+                        }
+                    };
+                    tokio::time::sleep(Duration::from_secs(tts)).await;
+                }
+            });
+
             match guild.channels(&ctx).await {
                 Ok(all_channels) => {
                     let mut mchannels = HashMap::new();
@@ -334,33 +375,6 @@ impl EventHandler for Handler {
                         .collect::<Vec<String>>();
 
                     info!("found server with id {guild} and channels {channel_list:?}");
-                    for channel in channels.keys() {
-                        let ctxn = Arc::clone(&ctx);
-                        let c = Arc::new(*channel.as_u64());
-                        let g = Arc::new(*guild.as_u64());
-                        tokio::spawn(async move {
-                            loop {
-                                let c1 = Arc::clone(&c);
-                                let g1 = Arc::clone(&g);
-                                let tts = match process_old_messages(&Arc::clone(&ctxn), &c1, &g1)
-                                    .await
-                                {
-                                    Ok(val) => {
-                                        if val == 0 {
-                                            10 * 60
-                                        } else {
-                                            120
-                                        }
-                                    }
-                                    Err(why) => {
-                                        warn!("process old messages with err {why:?}");
-                                        240
-                                    }
-                                };
-                                tokio::time::sleep(Duration::from_secs(tts)).await;
-                            }
-                        });
-                    }
                     let channels_stored = match db.get_channel_list(guild) {
                         Ok(cs) => cs,
                         Err(_why) => Vec::new(),

@@ -18,6 +18,14 @@ pub struct Message {
 }
 
 #[derive(Debug)]
+pub struct Channel {
+    pub id: u64,
+    pub name: Option<String>,
+    pub visible: bool,
+    pub server: u64,
+}
+
+#[derive(Debug)]
 pub struct Link {
     pub id: Option<usize>, // internal to us
     pub link: String,

@@ -2,6 +2,7 @@ pub mod link;
 pub mod reply;
 pub mod wordle;
 
+pub use link::Channel;
 pub use link::Link;
 pub use link::Message;
 

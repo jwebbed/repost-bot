@@ -3,7 +3,7 @@ mod queries;
 
 use crate::errors::{Error, Result};
 use crate::structs::wordle::{LetterStatus, Wordle, WordleBoard};
-use crate::structs::{Link, Message, RepostCount, ReposterCount};
+use crate::structs::{Channel, Link, Message, RepostCount, ReposterCount};
 
 use log::info;
 use rusqlite::types::ToSql;
@@ -82,11 +82,17 @@ impl DB {
         }
     }
 
-    pub fn get_newest_unchecked_message(&self, channel_id: u64) -> Result<Option<u64>> {
+    pub fn get_newest_unchecked_message(&self, server_id: u64) -> Result<Option<Message>> {
         let conn = self.conn.borrow();
-        let mut stmt = conn.prepare_cached(
-            "SELECT id FROM message 
-            WHERE channel=(?1) AND (
+        let mut stmt = conn.prepare(
+            "SELECT M.id, M.server, M.channel, M.author, M.created_at, 
+                    M.parsed_repost, M.parsed_wordle
+            FROM message as M 
+            JOIN channel as C on C.id=M.channel
+            WHERE 
+            C.visible=TRUE AND
+            M.deleted=FALSE AND
+            M.server=(?1) AND (
                 parsed_repost=FALSE
                 OR parsed_wordle=FALSE
                 OR author IS NULL
@@ -94,7 +100,17 @@ impl DB {
             ORDER BY parsed_wordle, parsed_repost, created_at desc
             LIMIT 1",
         )?;
-        let mut rows = stmt.query_map([channel_id], |row| row.get(0))?;
+        let mut rows = stmt.query_map([server_id], |row| {
+            Ok(Message {
+                id: row.get(0)?,
+                server: row.get(1)?,
+                channel: row.get(2)?,
+                author: row.get(3)?,
+                created_at: row.get(4)?,
+                parsed_repost: row.get(5)?,
+                parsed_wordle: row.get(6)?,
+            })
+        })?;
         // I hate this but it works
         let ret = if let Some(tmp) = rows.next() {
             Some(tmp?)
@@ -102,6 +118,30 @@ impl DB {
             None
         };
         Ok(ret)
+    }
+
+    pub fn get_known_channels(&self, server_id: u64) -> Result<Vec<Channel>> {
+        let conn = self.conn.borrow();
+        let mut stmt = conn.prepare(
+            "SELECT * FROM channel 
+            WHERE server=(?1) AND 
+                visible=TRUE",
+        )?;
+
+        let rows = stmt.query_map([server_id], |row| {
+            Ok(Channel {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                visible: row.get(2)?,
+                server: row.get(3)?,
+            })
+        })?;
+
+        let mut channels = Vec::new();
+        for row in rows {
+            channels.push(row?)
+        }
+        Ok(channels)
     }
 
     pub fn add_message(
@@ -188,9 +228,22 @@ impl DB {
 
     pub fn delete_message(&self, message_id: MessageId) -> Result<()> {
         let conn = self.conn.borrow();
+        conn.execute("DELETE FROM message WHERE id=(?1)", [*message_id.as_u64()])?;
+        Ok(())
+    }
+
+    // Soft delete is for when we query for a message, but get no result,
+    // this can occur if a message was deleted whilst the bot was down.
+    //
+    // If we see a message deleted we should (and do) just delete the message
+    // outright from the DB. Soft delete is for this other case as we aren't
+    // entirely sure what we should do with this. For safety not deleting and
+    // and just filtering from relevent queries.
+    pub fn soft_delete_message(&self, message_id: u64) -> Result<()> {
+        let conn = self.conn.borrow();
         conn.execute(
-            "DELETE FROM message WHERE id = (?1)",
-            params![*message_id.as_u64()],
+            "UPDATE message SET deleted=true WHERE id=(?1)",
+            [message_id],
         )?;
         Ok(())
     }
@@ -289,7 +342,8 @@ impl DB {
             WHERE 
                 L.link = (?1)
                 AND S.id = (?2)
-                AND C.visible=TRUE;",
+                AND C.visible=TRUE
+                AND M.deleted=FALSE;",
         )?;
         let rows = stmt.query_map(params![link, server], |row| {
             Ok(Link {
@@ -329,7 +383,9 @@ impl DB {
                 FROM message_link as ML 
                 JOIN message as M on ML.message=M.id
                 JOIN channel as C on M.channel=C.id
-                WHERE M.server=(?1) AND C.visible=TRUE
+                WHERE M.server=(?1) AND 
+                    C.visible=TRUE AND
+                    M.deleted=FALSE
                 GROUP BY link
                 HAVING link_count > 1 
             ) as LM on L.id=LM.link
@@ -362,7 +418,9 @@ impl DB {
                 FROM message_link as ML
                 JOIN message as M on M.id = ML.message 
                 JOIN channel as C on M.channel=C.id
-                WHERE M.server=(?1) AND C.visible=TRUE
+                WHERE M.server=(?1) AND 
+                    C.visible=TRUE AND
+                    M.deleted=FALSE
                 GROUP BY link
             ) as L2 on L1.link=L2.link
             JOIN message as M on M.id=L1.message
@@ -408,7 +466,9 @@ impl DB {
             "SELECT W.*, MIN(M.created_at)
             FROM wordle as W 
             JOIN message as M on W.message=M.id
-            WHERE M.author=(?1) AND M.server=(?2)
+            WHERE M.author=(?1) AND 
+                M.server=(?2) AND
+                M.deleted=FALSE
             GROUP BY W.number",
         )?;
 
@@ -439,7 +499,7 @@ impl DB {
             "SELECT W.*, MIN(M.created_at)
             FROM wordle as W 
             JOIN message as M on W.message=M.id
-            WHERE M.server=(?1)
+            WHERE M.server=(?1) AND M.deleted=FALSE
             GROUP BY M.author, W.number",
         )?;
 

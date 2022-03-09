@@ -212,6 +212,16 @@ fn migration_5(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+const MIGRATION_6: [&str; 1] = ["ALTER TABLE message ADD deleted BOOLEAN DEFAULT FALSE;"];
+
+fn migration_6(conn: &Connection) -> Result<()> {
+    for migration in MIGRATION_6 {
+        conn.execute(migration, [])?;
+    }
+    queries::set_version(conn, 6)?;
+    Ok(())
+}
+
 fn delete_old_links(conn: &Connection) -> Result<()> {
     conn.execute(
         "DELETE FROM link WHERE id IN (
@@ -227,7 +237,7 @@ fn delete_old_links(conn: &Connection) -> Result<()> {
 
 pub fn migrate(conn: &mut Connection) -> Result<()> {
     // be sure to increment this everytime a new migration is added
-    const FINAL_VER: u32 = 5;
+    const FINAL_VER: u32 = 6;
 
     let ver = queries::get_version(conn)?;
 
@@ -254,6 +264,9 @@ pub fn migrate(conn: &mut Connection) -> Result<()> {
     }
     if ver < 5 {
         migration_5(&tx)?;
+    }
+    if ver < 6 {
+        migration_6(&tx)?;
     }
 
     // delete old links we don't need
@@ -332,6 +345,22 @@ mod tests {
             m.insert(info.name.clone(), info);
         }
         Ok(Table { rows: m })
+    }
+
+    #[test]
+    fn test_message_table() -> Result<()> {
+        let table = get_table_info("message")?;
+
+        assert_eq!(table.rows.len(), 8);
+        table.assert_row("id", "INTEGER", 0, None, 1);
+        table.assert_row("server", "INTEGER", 0, None, 0);
+        table.assert_row("channel", "INTEGER", 0, None, 0);
+        table.assert_row("created_at", "NUMERIC", 0, None, 0);
+        table.assert_row("author", "INTEGER", 0, Some("NULL"), 0);
+        table.assert_row("parsed_repost", "BOOLEAN", 0, Some("FALSE"), 0);
+        table.assert_row("parsed_wordle", "BOOLEAN", 0, Some("FALSE"), 0);
+        table.assert_row("deleted", "BOOLEAN", 0, Some("FALSE"), 0);
+        Ok(())
     }
 
     #[test]
