@@ -339,9 +339,10 @@ impl EventHandler for Handler {
             let ctxn = Arc::clone(&ctx);
             let g = Arc::new(*guild.as_u64());
             tokio::spawn(async move {
+                let gn = Arc::clone(&g);
+                let c = &Arc::clone(&ctxn);
                 loop {
-                    let g1 = Arc::clone(&g);
-                    let tts = match process_old_messages(&Arc::clone(&ctxn), &g1).await {
+                    let tts = match process_old_messages(&c, &gn).await {
                         Ok(val) => {
                             if val == 0 {
                                 10 * 60
@@ -393,17 +394,19 @@ impl EventHandler for Handler {
                     // check for most recent message
                     for id in channels.keys().map(|id| *id.as_u64()) {
                         match ctx.http.get_messages(id, "?limit=1").await {
-                            Ok(msg) => {
-                                if msg.len() > 0 && !msg[0].author.bot {
-                                    log_error(
-                                        db.add_message(
-                                            msg[0].id,
-                                            *msg[0].channel_id.as_u64(),
-                                            *guild.as_u64(),
-                                            *msg[0].author.id.as_u64(),
-                                        ),
-                                        "db add message",
-                                    );
+                            Ok(mut msg_vec) => {
+                                if let Some(msg) = msg_vec.pop() {
+                                    if !msg.author.bot {
+                                        log_error(
+                                            db.add_message(
+                                                msg.id,
+                                                *msg.channel_id.as_u64(),
+                                                *guild.as_u64(),
+                                                *msg.author.id.as_u64(),
+                                            ),
+                                            "db add message",
+                                        );
+                                    }
                                 }
                             }
                             Err(why) => {

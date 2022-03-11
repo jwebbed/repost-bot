@@ -9,6 +9,7 @@ mod errors;
 mod handler;
 mod structs;
 
+use console_subscriber;
 use log::LevelFilter;
 use log::{error, info, warn};
 use serenity::prelude::*;
@@ -45,6 +46,9 @@ async fn main() {
     let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
     // migrate the db
     migrate_db();
+
+    // init for tokio metrics
+    console_subscriber::init();
 
     // Create a new instance of the Client, logging in as a bot. This will
     // automatically prepend your bot token with "Bot ", which is a requirement
