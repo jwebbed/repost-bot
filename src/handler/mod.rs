@@ -394,7 +394,7 @@ impl EventHandler for Handler {
                     for id in channels.keys().map(|id| *id.as_u64()) {
                         match ctx.http.get_messages(id, "?limit=1").await {
                             Ok(msg) => {
-                                if !msg[0].author.bot {
+                                if msg.len() > 0 && !msg[0].author.bot {
                                     log_error(
                                         db.add_message(
                                             msg[0].id,
