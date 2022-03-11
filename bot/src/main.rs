@@ -8,7 +8,6 @@ mod errors;
 mod handler;
 mod structs;
 
-
 use log::LevelFilter;
 use log::{error, info, warn};
 use serenity::model::gateway::GatewayIntents;
@@ -36,8 +35,8 @@ fn migrate_db() {
 async fn main() {
     SimpleLogger::new()
         .with_level(LevelFilter::Warn)
-        .with_module_level("bot", LevelFilter::Debug)
-        .with_module_level("db", LevelFilter::Debug)
+        .with_module_level("bot", LevelFilter::Info)
+        .with_module_level("db", LevelFilter::Info)
         // EST offset, will be incorrect if it runs over DST
         // Could we please abolish DST
         .with_utc_offset(UtcOffset::from_hms(-4, 0, 0).unwrap())
