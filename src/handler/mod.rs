@@ -36,6 +36,11 @@ pub fn log_error<T>(r: Result<T>, label: &str) {
     }
 }
 
+#[inline(always)]
+fn regular_text_msg(kind: MessageType) -> bool {
+    kind == MessageType::Regular || kind == MessageType::InlineReply
+}
+
 async fn bot_read_channel_permission(ctx: &Context, channel: &GuildChannel) -> bool {
     let current_user_id = ctx.cache.current_user().await.id;
     match channel
@@ -53,7 +58,7 @@ async fn process_discord_message(ctx: &Context, msg: &Message) -> Result<structs
         return Err(Error::BotMessage);
     }
 
-    if msg.kind != MessageType::Regular {
+    if !regular_text_msg(msg.kind) {
         return Err(Error::ConstStr("Message is not a regular text message"));
     }
     let now = Instant::now();
@@ -169,7 +174,7 @@ async fn process_old_messages(ctx: &Context, server_id: &u64) -> Result<usize> {
         for mut msg in messages {
             ids.insert(*msg.id.as_u64());
 
-            if msg.author.bot || msg.kind != MessageType::Regular {
+            if msg.author.bot || !regular_text_msg(msg.kind) {
                 continue;
             }
             if msg.guild_id.is_none() {
