@@ -39,7 +39,7 @@ async fn main() {
         .with_module_level("repost_bot", LevelFilter::Trace)
         // EST offset, will be incorrect if it runs over DST
         // Could we please abolish DST
-        .with_utc_offset(UtcOffset::from_hms(-5, 0, 0).unwrap())
+        .with_utc_offset(UtcOffset::from_hms(-4, 0, 0).unwrap())
         .init()
         .unwrap();
     // Configure the client with your Discord bot token in the environment.
