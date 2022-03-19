@@ -178,7 +178,7 @@ async fn process_old_messages(ctx: &Context, server_id: &u64) -> Result<usize> {
             if msg.author.bot || !regular_text_msg(msg.kind) {
                 if let Some(base_id) = base_msg {
                     if base_id == id {
-                        warn!("base msg id {id} either a bot of not a regular text message");
+                        warn!("base msg id {id} either a bot or not a regular text message");
                         db.soft_delete_message(base_id)?;
                     }
                 }
