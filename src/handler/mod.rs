@@ -192,6 +192,9 @@ async fn process_old_messages(ctx: &Context, server_id: &u64) -> Result<usize> {
             }
         }
 
+        // if when querying around ID the ID itself doesn't show up,
+        // this would seem to indicate it was deleted and we missed it.
+        // As this is unclear, we just soft delete it.
         if let Some(base_msg) = base_msg {
             if !ids.contains(&base_msg) {
                 warn!("did not received base msg id {base_msg} when querying for messages");
