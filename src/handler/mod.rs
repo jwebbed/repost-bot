@@ -172,19 +172,23 @@ async fn process_old_messages(ctx: &Context, server_id: &u64) -> Result<usize> {
         info!("received {len} messages for channel id: {channel_id} and query_string {query}");
         let mut ids = HashSet::with_capacity(len);
         for mut msg in messages {
-            ids.insert(*msg.id.as_u64());
+            let id = *msg.id.as_u64();
+            ids.insert(id);
 
             if msg.author.bot || !regular_text_msg(msg.kind) {
-                continue;
-            }
-            if msg.guild_id.is_none() {
-                msg.guild_id = Some(GuildId(*server_id));
-            }
-            if let Err(why) = process_message(ctx, &msg, false).await {
-                warn!(
-                    "Failed to process old message {} with error {why:?}",
-                    msg.id
-                );
+                if let Some(base_id) = base_msg {
+                    if base_id == id {
+                        warn!("base msg id {id} either a bot of not a regular text message");
+                        db.soft_delete_message(base_id)?;
+                    }
+                }
+            } else {
+                if msg.guild_id.is_none() {
+                    msg.guild_id = Some(GuildId(*server_id));
+                }
+                if let Err(why) = process_message(ctx, &msg, false).await {
+                    warn!("Failed to process old message {} with error {why:?}", id);
+                }
             }
         }
 
