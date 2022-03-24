@@ -23,10 +23,11 @@ fn query_link_matches(url_str: &str, server: u64) -> Result<Vec<Link>> {
     Ok(links)
 }
 
-const IGNORED_DOMAINS: [&str; 3] = [
-    "globle-game.com",
+const IGNORED_DOMAINS: [&str; 4] = [
+    r"globle-game\.com",
     r"discord\.com/channels",
     r"tenor\.com/view",
+    r"heardle\.app",
 ];
 
 /// returns true if the input link is one of the ignored domains
@@ -182,5 +183,18 @@ mod tests {
         assert_eq!(get_links(message).len(), 0);
         // Also assert with no trailing slash
         assert_eq!(get_links("https://globle-game.com").len(), 0);
+    }
+
+    #[test]
+    fn test_ignore_heardle() {
+        let message = r"#Heardle #27
+
+        🔈⬛️⬛️⬛️⬛️⬛️🟩
+        
+        https://heardle.app/";
+
+        assert_eq!(get_links(message).len(), 0);
+        // Also assert with no trailing slash
+        assert_eq!(get_links("https://heardle.app").len(), 0);
     }
 }
