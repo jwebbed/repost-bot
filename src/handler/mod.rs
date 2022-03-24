@@ -351,10 +351,8 @@ impl EventHandler for Handler {
             let ctxn = Arc::clone(&ctx);
             let g = Arc::new(*guild.as_u64());
             tokio::spawn(async move {
-                let gn = Arc::clone(&g);
-                let c = &Arc::clone(&ctxn);
                 loop {
-                    let tts = match process_old_messages(&c, &gn).await {
+                    let tts = match process_old_messages(&ctxn, &g).await {
                         Ok(val) => {
                             if val == 0 {
                                 10 * 60

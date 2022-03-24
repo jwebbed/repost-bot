@@ -11,6 +11,10 @@ static TWITTER_FIELDS: phf::Set<&'static str> = phf_set! {
     "t"
 };
 
+static YOUTUBE_FIELDS: phf::Set<&'static str> = phf_set! {
+    "feature",
+};
+
 static GENERIC_FIELDS: phf::Set<&'static str> = phf_set! {
     // Google's Urchin Tracking Module
     "utm_source",
@@ -72,6 +76,7 @@ static GENERIC_FIELDS: phf::Set<&'static str> = phf_set! {
 fn filter_field(host: &str, field: &str) -> bool {
     let host_match = match host {
         "twitter" | "twitter.com" => TWITTER_FIELDS.contains(field),
+        "youtube" | "youtube.com" => YOUTUBE_FIELDS.contains(field),
         _ => false,
     };
     host_match || GENERIC_FIELDS.contains(field)
@@ -105,7 +110,9 @@ fn transform_url(url: Url) -> Result<Url> {
 /// filtered_url takes a url_str and returns a Url object with the any irrelevent
 /// fields in the query string removed as per filter_field
 pub fn filtered_url(url_str: &str) -> Result<Url> {
-    let mut url = transform_url(Url::parse(url_str)?)?;
+    let base_url = Url::parse(url_str)?;
+    debug!("Pre-filter URL: {base_url:?}");
+    let mut url = transform_url(base_url)?;
     let host = url.host_str().ok_or(rusqlite::Error::QueryReturnedNoRows)?;
 
     let fields = url
@@ -128,7 +135,7 @@ pub fn filtered_url(url_str: &str) -> Result<Url> {
         url.set_query(None);
     }
 
-    debug!("found filtered url {url:?}");
+    debug!("Filtered URL: {url:?}");
     Ok(url)
 }
 
@@ -146,6 +153,13 @@ mod tests {
             "https://twitter.com/user/status/idnumber"
         );
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_filter_youtube() -> Result<()> {
+        let filtered = filtered_url("https://youtube.com/shorts/fakeid?feature=share")?;
+        assert_eq!(filtered.as_str(), "https://youtube.com/shorts/fakeid");
         Ok(())
     }
 
