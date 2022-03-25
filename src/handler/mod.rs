@@ -1,5 +1,6 @@
 mod commands;
 mod links;
+mod memory;
 mod wordle;
 
 use crate::db::DB;
@@ -8,6 +9,7 @@ use crate::structs;
 use crate::structs::reply::Reply;
 
 use log::{debug, error, info, trace, warn};
+
 use rand::seq::SliceRandom;
 use rand::{random, thread_rng};
 use serenity::{
@@ -347,11 +349,13 @@ impl EventHandler for Handler {
             }
         };
         let ctx = Arc::new(ctx);
+        memory::log_memory("pre task spawning");
         for guild in guilds {
             let ctxn = Arc::clone(&ctx);
             let g = Arc::new(*guild.as_u64());
             tokio::spawn(async move {
                 loop {
+                    memory::log_memory("pre process_old_messages call");
                     let tts = match process_old_messages(&ctxn, &g).await {
                         Ok(val) => {
                             if val == 0 {
