@@ -77,7 +77,7 @@ async fn process_discord_message(ctx: &Context, msg: &Message) -> Result<structs
 
     let server = msg
         .guild_id
-        .ok_or_else(|| Error::ConstStr("Guild id doesn't exist on message"))?;
+        .ok_or(Error::ConstStr("Guild id doesn't exist on message"))?;
     let server_id = *server.as_u64();
     let server_name = &server.name(&ctx).await;
     db.update_server(server_id, server_name)?;
@@ -391,22 +391,40 @@ impl EventHandler for Handler {
 
                     info!("found server with id {guild} and channels {channel_list:?}");
                     let channels_stored = match db.get_channel_list(guild) {
-                        Ok(cs) => cs,
-                        Err(_why) => Vec::new(),
+                        Ok(cs) => HashMap::from_iter(cs),
+                        Err(_why) => HashMap::new(),
                     };
-
-                    for (id, name) in channels_stored {
-                        if !channel_list.contains(&name) {
-                            warn!(
-                                "stored channel {} no longer exists on server, deleting",
-                                name
-                            );
+                    for (id, name) in channels_stored.clone() {
+                        if !channels.contains_key(&id) {
+                            warn!("stored channel {name} with id {id} no longer exists on server, deleting");
                             log_error(db.delete_channel(id), "Db delete channel");
                         }
                     }
 
+                    // insert all channels to update names and build visibility map
+                    let mut visibility_map = HashMap::with_capacity(channels.len());
+                    for (id, channel) in channels.clone() {
+                        let visible = bot_read_channel_permission(&ctx, &channel).await;
+                        visibility_map.insert(*id.as_u64(), visible);
+                        log_error(
+                            db.update_channel(
+                                *channel.id.as_u64(),
+                                *channel.guild_id.as_u64(),
+                                &channel.name,
+                                visible,
+                            ),
+                            "Db update channel",
+                        );
+                    }
+
                     // check for most recent message
                     for id in channels.keys().map(|id| *id.as_u64()) {
+                        //
+                        if let Some(visible) = visibility_map.get(&id) {
+                            if !visible {
+                                continue;
+                            }
+                        }
                         match ctx.http.get_messages(id, "?limit=1").await {
                             Ok(mut msg_vec) => {
                                 if let Some(msg) = msg_vec.pop() {
