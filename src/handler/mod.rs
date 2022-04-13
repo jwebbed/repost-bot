@@ -405,7 +405,7 @@ impl EventHandler for Handler {
                     let mut visibility_map = HashMap::with_capacity(channels.len());
                     for (id, channel) in channels.clone() {
                         let visible = bot_read_channel_permission(&ctx, &channel).await;
-                        visibility_map.insert(*id.as_u64(), visible);
+                        visibility_map.insert(id, visible);
                         log_error(
                             db.update_channel(
                                 *channel.id.as_u64(),
@@ -418,13 +418,11 @@ impl EventHandler for Handler {
                     }
 
                     // check for most recent message
-                    for id in channels.keys().map(|id| *id.as_u64()) {
-                        //
-                        if let Some(visible) = visibility_map.get(&id) {
-                            if !visible {
-                                continue;
-                            }
-                        }
+                    for id in channels
+                        .keys()
+                        .filter(|id| *visibility_map.get(&id).unwrap_or(&true))
+                        .map(|id| *id.as_u64())
+                    {
                         match ctx.http.get_messages(id, "?limit=1").await {
                             Ok(mut msg_vec) => {
                                 if let Some(msg) = msg_vec.pop() {
