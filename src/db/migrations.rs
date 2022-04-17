@@ -222,6 +222,22 @@ fn migration_6(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+const MIGRATION_7: [&str; 1] = ["CREATE TABLE catchup ( 
+    message INTEGER PRIMARY KEY, 
+    channel INTEGER,
+    server INTEGER,
+    FOREIGN KEY(channel) REFERENCES channel_temp(id) ON DELETE CASCADE
+    FOREIGN KEY(server) REFERENCES server(id) ON DELETE CASCADE,
+);"];
+
+fn migration_7(conn: &Connection) -> Result<()> {
+    for migration in MIGRATION_7 {
+        conn.execute(migration, [])?;
+    }
+    queries::set_version(conn, 7)?;
+    Ok(())
+}
+
 fn delete_old_links(conn: &Connection) -> Result<()> {
     conn.execute(
         "DELETE FROM link WHERE id IN (
@@ -237,7 +253,7 @@ fn delete_old_links(conn: &Connection) -> Result<()> {
 
 pub fn migrate(conn: &mut Connection) -> Result<()> {
     // be sure to increment this everytime a new migration is added
-    const FINAL_VER: u32 = 6;
+    const FINAL_VER: u32 = 7;
 
     let ver = queries::get_version(conn)?;
 
@@ -267,6 +283,9 @@ pub fn migrate(conn: &mut Connection) -> Result<()> {
     }
     if ver < 6 {
         migration_6(&tx)?;
+    }
+    if ver < 7 {
+        migration_7(&tx)?;
     }
 
     // delete old links we don't need
