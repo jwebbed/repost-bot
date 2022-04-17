@@ -3,15 +3,31 @@ use crate::errors::Result;
 use log::{info, warn};
 use rusqlite::Connection;
 
-const MIGRATION_1: [&str; 6] = [
+macro_rules! migration {
+    ( $n:literal, $( $x:literal ),* ) => {
+        paste::item! {
+            fn [< migration_$n >] (conn: &Connection) -> Result<()> {
+                $(
+                    conn.execute($x, [])?;
+                )*
+
+                queries::set_version(conn, $n)?;
+                Ok(())
+            }
+        }
+    };
+}
+
+migration![
+    1,
     // add server table
-    "CREATE TABLE server ( 
-        id INTEGER PRIMARY KEY, 
+    "CREATE TABLE server (
+        id INTEGER PRIMARY KEY,
         name TEXT
     );",
     // add channel table
-    "CREATE TABLE channel ( 
-        id INTEGER PRIMARY KEY, 
+    "CREATE TABLE channel (
+        id INTEGER PRIMARY KEY,
         name TEXT,
         server INTEGER,
         FOREIGN KEY(server) REFERENCES server(id)
@@ -39,28 +55,22 @@ const MIGRATION_1: [&str; 6] = [
              FOREIGN KEY(message) REFERENCES message(id)
          );",
     // add link table index
-    "CREATE UNIQUE INDEX idx_message_link ON message_link (link, message);",
+    "CREATE UNIQUE INDEX idx_message_link ON message_link (link, message);"
 ];
 
-fn migration_1(conn: &Connection) -> Result<()> {
-    for migration in MIGRATION_1 {
-        conn.execute(migration, [])?;
-    }
-    queries::set_version(conn, 1)?;
-    Ok(())
-}
+migration![2, "ALTER TABLE channel ADD visible BOOLEAN DEFAULT TRUE;"];
 
-const MIGRATION_2: [&str; 1] = ["ALTER TABLE channel ADD visible BOOLEAN DEFAULT TRUE;"];
-
-fn migration_2(conn: &Connection) -> Result<()> {
-    for migration in MIGRATION_2 {
-        conn.execute(migration, [])?;
-    }
-    queries::set_version(conn, 2)?;
-    Ok(())
-}
-
-const MIGRATION_3: [&str; 13] = [
+// This migration essentially re-does the basic tables, adding a ON DELETE CASCADE
+// to all of the foreign key relations so we don't have to do all this
+// stuff we manually deleting in reverse order.
+//
+// Less obviously it adds a ON DELETE CASCADE to the link relation in message_link,
+// which is odd as there is currently no place where we delete a link that has a
+// message link at the moment. This is primary for if we decide to remove some
+// links from the link table because we decided we want to filter them out,
+// we don't have to manually also remove this.
+migration![
+    3,
     // add temp channel table
     "CREATE TABLE channel_temp ( 
         id INTEGER PRIMARY KEY, 
@@ -102,27 +112,11 @@ const MIGRATION_3: [&str; 13] = [
     "DROP TABLE channel",
     "ALTER TABLE channel_temp RENAME TO channel",
     // add link table index
-    "CREATE UNIQUE INDEX idx_message_link ON message_link (link, message);",
+    "CREATE UNIQUE INDEX idx_message_link ON message_link (link, message);"
 ];
 
-// This migration essentially re-does the basic tables, adding a ON DELETE CASCADE
-// to all of the foreign key relations so we don't have to do all this
-// stuff we manually deleting in reverse order.
-//
-// Less obviously it adds a ON DELETE CASCADE to the link relation in message_link,
-// which is odd as there is currently no place where we delete a link that has a
-// message link at the moment. This is primary for if we decide to remove some
-// links from the link table because we decided we want to filter them out,
-// we don't have to manually also remove this.
-fn migration_3(conn: &Connection) -> Result<()> {
-    for migration in MIGRATION_3 {
-        conn.execute(migration, [])?;
-    }
-    queries::set_version(conn, 3)?;
-    Ok(())
-}
-
-const MIGRATION_4: [&str; 6] = [
+migration![
+    4,
     "CREATE TABLE wordle ( 
         message INTEGER PRIMARY KEY,
         number INTEGER NOT NULL,
@@ -173,18 +167,11 @@ const MIGRATION_4: [&str; 6] = [
     "ALTER TABLE message ADD parsed_wordle BOOLEAN DEFAULT FALSE;",
     // Want the default to be FALSE for all new entries, but all
     // existing at time of migration should be TRUE
-    "UPDATE message SET parsed_repost = TRUE;",
+    "UPDATE message SET parsed_repost = TRUE;"
 ];
 
-fn migration_4(conn: &Connection) -> Result<()> {
-    for migration in MIGRATION_4 {
-        conn.execute(migration, [])?;
-    }
-    queries::set_version(conn, 4)?;
-    Ok(())
-}
-
-const MIGRATION_5: [&str; 5] = [
+migration![
+    5,
     "CREATE TABLE user ( 
         id INTEGER PRIMARY KEY, 
         username TEXT NOT NULL,
@@ -201,26 +188,10 @@ const MIGRATION_5: [&str; 5] = [
     );",
     "CREATE INDEX idx_user ON user (username, discriminator, bot);",
     "CREATE UNIQUE INDEX idx_nickname ON nickname (server, user, nickname);",
-    "CREATE INDEX idx_msg ON message (server, channel, author);",
+    "CREATE INDEX idx_msg ON message (server, channel, author);"
 ];
 
-fn migration_5(conn: &Connection) -> Result<()> {
-    for migration in MIGRATION_5 {
-        conn.execute(migration, [])?;
-    }
-    queries::set_version(conn, 5)?;
-    Ok(())
-}
-
-const MIGRATION_6: [&str; 1] = ["ALTER TABLE message ADD deleted BOOLEAN DEFAULT FALSE;"];
-
-fn migration_6(conn: &Connection) -> Result<()> {
-    for migration in MIGRATION_6 {
-        conn.execute(migration, [])?;
-    }
-    queries::set_version(conn, 6)?;
-    Ok(())
-}
+migration![6, "ALTER TABLE message ADD deleted BOOLEAN DEFAULT FALSE;"];
 
 fn delete_old_links(conn: &Connection) -> Result<()> {
     conn.execute(

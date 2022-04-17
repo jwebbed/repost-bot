@@ -351,6 +351,13 @@ impl EventHandler for Handler {
         let ctx = Arc::new(ctx);
         memory::log_memory("pre task spawning");
         for guild in guilds {
+            let server_name = guild.name(&ctx).await;
+
+            log_error(
+                db.update_server(*guild.as_u64(), &server_name),
+                "Update server name from cache_ready",
+            );
+
             let ctxn = Arc::clone(&ctx);
             let g = Arc::new(*guild.as_u64());
             tokio::spawn(async move {
