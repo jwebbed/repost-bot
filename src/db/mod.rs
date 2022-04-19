@@ -19,6 +19,20 @@ fn repeat_vars(count: usize) -> String {
     s
 }
 
+#[inline(always)]
+fn extract_first_result<I, T>(iter: &mut I) -> Result<Option<T>>
+where
+    I: Iterator<Item = rusqlite::Result<T>>,
+{
+    // I hate this less than what I was doing before, but still works
+    let ret = match iter.next() {
+        Some(ret) => Some(ret?),
+        None => None,
+    };
+
+    Ok(ret)
+}
+
 pub struct DB {
     conn: RefCell<Connection>,
 }
@@ -81,23 +95,44 @@ impl DB {
             Err(why) => Err(Error::from(why)),
         }
     }
+    pub fn get_message(&self, message_id: MessageId) -> Result<Option<Message>> {
+        let conn = self.conn.borrow();
+        let mut stmt = conn.prepare(
+            "SELECT M.id, M.server, M.channel, M.author, M.created_at, 
+                    M.parsed_repost, M.parsed_wordle, M.deleted, M.checked_old
+            FROM message as M 
+            WHERE id = (?1)",
+        )?;
+
+        let mut rows = stmt.query_map([*message_id.as_u64()], |row| {
+            Ok(Message {
+                id: row.get(0)?,
+                server: row.get(1)?,
+                channel: row.get(2)?,
+                author: row.get(3)?,
+                created_at: row.get(4)?,
+                parsed_repost: row.get(5)?,
+                parsed_wordle: row.get(6)?,
+                deleted: row.get(7)?,
+                checked_old: row.get(8)?,
+            })
+        })?;
+        extract_first_result(&mut rows)
+    }
 
     pub fn get_newest_unchecked_message(&self, server_id: u64) -> Result<Option<Message>> {
         let conn = self.conn.borrow();
         let mut stmt = conn.prepare(
             "SELECT M.id, M.server, M.channel, M.author, M.created_at, 
-                    M.parsed_repost, M.parsed_wordle
+                    M.parsed_repost, M.parsed_wordle, M.deleted, M.checked_old
             FROM message as M 
             JOIN channel as C on C.id=M.channel
             WHERE 
-            C.visible=TRUE AND
-            M.deleted=FALSE AND
-            M.server=(?1) AND (
-                parsed_repost=FALSE
-                OR parsed_wordle=FALSE
-                OR author IS NULL
-            )
-            ORDER BY parsed_wordle, parsed_repost, created_at desc
+                C.visible=TRUE AND
+                M.deleted IS NULL AND
+                M.server=(?1) AND 
+                M.checked_old IS NULL
+            ORDER BY M.created_at desc
             LIMIT 1",
         )?;
         let mut rows = stmt.query_map([server_id], |row| {
@@ -109,15 +144,11 @@ impl DB {
                 created_at: row.get(4)?,
                 parsed_repost: row.get(5)?,
                 parsed_wordle: row.get(6)?,
+                deleted: row.get(7)?,
+                checked_old: row.get(8)?,
             })
         })?;
-        // I hate this but it works
-        let ret = if let Some(tmp) = rows.next() {
-            Some(tmp?)
-        } else {
-            None
-        };
-        Ok(ret)
+        extract_first_result(&mut rows)
     }
 
     pub fn get_known_channels(&self, server_id: u64) -> Result<Vec<Channel>> {
@@ -219,7 +250,18 @@ impl DB {
         let conn = self.conn.borrow();
         conn.execute(
             "UPDATE message 
-            SET parsed_repost=TRUE, parsed_wordle=TRUE 
+            SET parsed_repost=datetime('now'), parsed_wordle=datetime('now')  
+            WHERE id=(?1)",
+            [*message_id.as_u64()],
+        )?;
+        Ok(())
+    }
+
+    pub fn mark_message_checked_old(&self, message_id: MessageId) -> Result<()> {
+        let conn = self.conn.borrow();
+        conn.execute(
+            "UPDATE message 
+            SET checked_old=datetime('now')
             WHERE id=(?1)",
             [*message_id.as_u64()],
         )?;
@@ -242,7 +284,7 @@ impl DB {
     pub fn soft_delete_message(&self, message_id: u64) -> Result<()> {
         let conn = self.conn.borrow();
         conn.execute(
-            "UPDATE message SET deleted=true WHERE id=(?1)",
+            "UPDATE message SET deleted=datetime('now') WHERE id=(?1)",
             [message_id],
         )?;
         Ok(())
@@ -338,7 +380,8 @@ impl DB {
         let mut stmt = conn.prepare(
             "SELECT 
                 L.id, L.link, S.id, C.id, M.id, M.created_at, C.name, 
-                S.name, M.author, M.parsed_repost, M.parsed_wordle
+                S.name, M.author, M.parsed_repost, M.parsed_wordle, 
+                M.deleted, M.checked_old
             FROM link AS L 
             JOIN message_link as ML on ML.link=L.id
             JOIN message as M on ML.message=M.id
@@ -348,7 +391,7 @@ impl DB {
                 L.link = (?1)
                 AND S.id = (?2)
                 AND C.visible=TRUE
-                AND M.deleted=FALSE;",
+                AND M.deleted IS NULL;",
         )?;
         let rows = stmt.query_map(params![link, server], |row| {
             Ok(Link {
@@ -364,6 +407,8 @@ impl DB {
                     created_at: row.get(5)?,
                     parsed_repost: row.get(9)?,
                     parsed_wordle: row.get(10)?,
+                    deleted: row.get(11)?,
+                    checked_old: row.get(12)?,
                 },
             })
         })?;
@@ -390,7 +435,7 @@ impl DB {
                 JOIN channel as C on M.channel=C.id
                 WHERE M.server=(?1) AND 
                     C.visible=TRUE AND
-                    M.deleted=FALSE
+                    M.deleted IS NULL
                 GROUP BY link
                 HAVING link_count > 1 
             ) as LM on L.id=LM.link
@@ -425,7 +470,7 @@ impl DB {
                 JOIN channel as C on M.channel=C.id
                 WHERE M.server=(?1) AND 
                     C.visible=TRUE AND
-                    M.deleted=FALSE
+                    M.deleted IS NULL
                 GROUP BY link
             ) as L2 on L1.link=L2.link
             JOIN message as M on M.id=L1.message
@@ -473,7 +518,7 @@ impl DB {
             JOIN message as M on W.message=M.id
             WHERE M.author=(?1) AND 
                 M.server=(?2) AND
-                M.deleted=FALSE
+                M.deleted IS NULL
             GROUP BY W.number",
         )?;
 
@@ -504,7 +549,7 @@ impl DB {
             "SELECT W.*, MIN(M.created_at)
             FROM wordle as W 
             JOIN message as M on W.message=M.id
-            WHERE M.server=(?1) AND M.deleted=FALSE
+            WHERE M.server=(?1) AND M.deleted IS NULL
             GROUP BY M.author, W.number",
         )?;
 

@@ -193,6 +193,43 @@ migration![
 
 migration![6, "ALTER TABLE message ADD deleted BOOLEAN DEFAULT FALSE;"];
 
+migration![
+    7,
+    "CREATE TABLE message_temp (
+        id INTEGER PRIMARY KEY,
+        server INTEGER,
+        channel INTEGER,
+        created_at NUMERIC,
+        author INTEGER DEFAULT NULL,
+        parsed_repost NUMERIC DEFAULT NULL,
+        parsed_wordle NUMERIC DEFAULT NULL,
+        deleted NUMERIC DEFAULT NULL,
+        checked_old NUMERIC DEFAULT NULL,
+        FOREIGN KEY(channel) REFERENCES channel(id) ON DELETE CASCADE
+    );",
+    "DROP INDEX idx_msg;",
+    "INSERT INTO message_temp (
+        id, server, channel, created_at, author, parsed_repost, parsed_wordle, deleted
+    )
+    SELECT id, server, channel, created_at, author,  
+        CASE 
+            WHEN parsed_repost=TRUE THEN datetime('now')
+            ELSE NULL
+        END as parsed_repost,
+        CASE 
+            WHEN parsed_wordle=TRUE THEN datetime('now')
+            ELSE NULL
+        END as parsed_wordle,
+        CASE 
+            WHEN deleted=TRUE THEN datetime('now')
+            ELSE NULL
+        END as deleted
+    FROM message",
+    "DROP TABLE message",
+    "ALTER TABLE message_temp RENAME TO message",
+    "CREATE INDEX idx_msg ON message (server, channel, author);"
+];
+
 fn delete_old_links(conn: &Connection) -> Result<()> {
     conn.execute(
         "DELETE FROM link WHERE id IN (
@@ -208,7 +245,7 @@ fn delete_old_links(conn: &Connection) -> Result<()> {
 
 pub fn migrate(conn: &mut Connection) -> Result<()> {
     // be sure to increment this everytime a new migration is added
-    const FINAL_VER: u32 = 6;
+    const FINAL_VER: u32 = 7;
 
     let ver = queries::get_version(conn)?;
 
@@ -238,6 +275,9 @@ pub fn migrate(conn: &mut Connection) -> Result<()> {
     }
     if ver < 6 {
         migration_6(&tx)?;
+    }
+    if ver < 7 {
+        migration_7(&tx)?;
     }
 
     // delete old links we don't need

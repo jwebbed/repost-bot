@@ -113,12 +113,12 @@ async fn process_message<'a>(
             None
         }
     } else {
-        if !db_msg.parsed_wordle {
+        if !db_msg.is_wordle_parsed() {
             wordle::check_wordle(msg);
         }
 
         // return the reply option from parsing reposts
-        if !db_msg.parsed_repost {
+        if !db_msg.is_repost_parsed() {
             links::store_links_and_get_reposts(msg)?
         } else {
             None
@@ -185,11 +185,24 @@ async fn process_old_messages(ctx: &Context, server_id: &u64) -> Result<usize> {
                     }
                 }
             } else {
+                let db_msg_maybe = DB::db_call(|db| db.get_message(msg.id))?;
                 if msg.guild_id.is_none() {
                     msg.guild_id = Some(GuildId(*server_id));
                 }
                 if let Err(why) = process_message(ctx, &msg, false).await {
                     warn!("Failed to process old message {} with error {why:?}", id);
+                }
+
+                if let Some(db_msg) = db_msg_maybe {
+                    if !db_msg.is_deleted() && !db_msg.is_checked_old() {
+                        // mark as checked old if we had this in the db before processing just now
+                        DB::db_call(|db| db.mark_message_checked_old(msg.id))?;
+                    }
+                } else {
+                    debug!(
+                        "message {} not already in db, must have been sent whilst server down",
+                        msg.id
+                    );
                 }
             }
         }
@@ -427,7 +440,7 @@ impl EventHandler for Handler {
                     // check for most recent message
                     for id in channels
                         .keys()
-                        .filter(|id| *visibility_map.get(&id).unwrap_or(&true))
+                        .filter(|id| *visibility_map.get(id).unwrap_or(&true))
                         .map(|id| *id.as_u64())
                     {
                         match ctx.http.get_messages(id, "?limit=1").await {

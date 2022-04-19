@@ -9,7 +9,6 @@ mod errors;
 mod handler;
 mod structs;
 
-use console_subscriber;
 use log::LevelFilter;
 use log::{error, info, warn};
 use serenity::prelude::*;

@@ -13,8 +13,10 @@ pub struct Message {
     pub created_at: DateTime<Utc>,
 
     // flags to indicate if various things were processed
-    pub parsed_repost: bool,
-    pub parsed_wordle: bool,
+    pub parsed_repost: Option<DateTime<Utc>>,
+    pub parsed_wordle: Option<DateTime<Utc>>,
+    pub deleted: Option<DateTime<Utc>>,
+    pub checked_old: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug)]
@@ -42,5 +44,21 @@ impl Message {
     /// discord client it will auto scroll to the message
     pub fn uri(&self) -> String {
         MessageId(self.id).link(ChannelId(self.channel), Some(GuildId(self.server)))
+    }
+
+    pub const fn is_repost_parsed(&self) -> bool {
+        self.parsed_repost.is_some()
+    }
+
+    pub const fn is_wordle_parsed(&self) -> bool {
+        self.parsed_wordle.is_some()
+    }
+
+    pub const fn is_deleted(&self) -> bool {
+        self.deleted.is_some()
+    }
+
+    pub const fn is_checked_old(&self) -> bool {
+        self.checked_old.is_some()
     }
 }
