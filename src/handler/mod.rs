@@ -1,6 +1,5 @@
 mod commands;
 mod links;
-mod memory;
 mod wordle;
 
 use crate::db::DB;
@@ -362,7 +361,6 @@ impl EventHandler for Handler {
             }
         };
         let ctx = Arc::new(ctx);
-        memory::log_memory("pre task spawning");
         for guild in guilds {
             let server_name = guild.name(&ctx).await;
 
@@ -375,7 +373,6 @@ impl EventHandler for Handler {
             let g = Arc::new(*guild.as_u64());
             tokio::spawn(async move {
                 loop {
-                    memory::log_memory("pre process_old_messages call");
                     let tts = match process_old_messages(&ctxn, &g).await {
                         Ok(val) => {
                             if val == 0 {
