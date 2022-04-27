@@ -55,7 +55,7 @@ async fn bot_read_channel_permission(ctx: &Context, channel: &GuildChannel) -> b
 }
 
 /// takes the message from discord, stores it, and returns the db struct for further processing
-async fn process_discord_message(ctx: &Context, msg: &Message) -> Result<structs::link::Message> {
+async fn process_discord_message(ctx: &Context, msg: &Message) -> Result<structs::Message> {
     if msg.author.bot {
         return Err(Error::BotMessage);
     }

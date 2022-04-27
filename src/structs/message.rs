@@ -1,0 +1,53 @@
+use chrono::{DateTime, Utc};
+use serenity::model::id::{ChannelId, GuildId, MessageId};
+
+#[derive(Debug)]
+pub struct Message {
+    // snowflakes referencing the various attributes
+    pub id: u64,     // the snowflake of this message
+    pub server: u64, // called guilds for some reason in discord API
+    pub channel: u64,
+    pub author: Option<u64>,
+
+    // time that the message for this link was created
+    pub created_at: DateTime<Utc>,
+
+    // flags to indicate if various things were processed
+    pub parsed_repost: Option<DateTime<Utc>>,
+    pub parsed_wordle: Option<DateTime<Utc>>,
+    pub deleted: Option<DateTime<Utc>>,
+    pub checked_old: Option<DateTime<Utc>>,
+}
+
+impl Message {
+    /// Returns a URI that references the message in discord. When clicked inside a
+    /// discord client it will auto scroll to the message
+    pub fn uri(&self) -> String {
+        MessageId(self.id).link(ChannelId(self.channel), Some(GuildId(self.server)))
+    }
+
+    pub const fn is_repost_parsed(&self) -> bool {
+        self.parsed_repost.is_some()
+    }
+
+    pub const fn is_wordle_parsed(&self) -> bool {
+        self.parsed_wordle.is_some()
+    }
+
+    pub const fn is_deleted(&self) -> bool {
+        self.deleted.is_some()
+    }
+
+    /// Return true if the link has been marked as 'checked for old messages'.
+    /// After querying for old messages around a given message OR the message
+    /// appears in an old message query (i.e. it was already in the db but
+    /// showed up in an old query anyways) it should be marked as checked.
+    ///
+    /// When a new field is added that requires going and back checking, all
+    /// messages should return false. If possible to determine that not all
+    /// messages need to be checked, only the messages that need to be checked
+    /// should start returning false to reduce backlog.
+    pub const fn is_checked_old(&self) -> bool {
+        self.checked_old.is_some()
+    }
+}

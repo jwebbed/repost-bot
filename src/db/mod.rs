@@ -97,27 +97,7 @@ impl DB {
     }
     pub fn get_message(&self, message_id: MessageId) -> Result<Option<Message>> {
         let conn = self.conn.borrow();
-        let mut stmt = conn.prepare(
-            "SELECT M.id, M.server, M.channel, M.author, M.created_at, 
-                    M.parsed_repost, M.parsed_wordle, M.deleted, M.checked_old
-            FROM message as M 
-            WHERE id = (?1)",
-        )?;
-
-        let mut rows = stmt.query_map([*message_id.as_u64()], |row| {
-            Ok(Message {
-                id: row.get(0)?,
-                server: row.get(1)?,
-                channel: row.get(2)?,
-                author: row.get(3)?,
-                created_at: row.get(4)?,
-                parsed_repost: row.get(5)?,
-                parsed_wordle: row.get(6)?,
-                deleted: row.get(7)?,
-                checked_old: row.get(8)?,
-            })
-        })?;
-        extract_first_result(&mut rows)
+        Ok(queries::get_message(&conn, *message_id.as_u64())?)
     }
 
     pub fn get_newest_unchecked_message(&self, server_id: u64) -> Result<Option<Message>> {
@@ -199,9 +179,11 @@ impl DB {
             author_id
         ])?;
 
-        match queries::get_message(&conn, msg_id64) {
-            Ok(ret) => Ok(ret),
-            Err(why) => Err(Error::from(why)),
+        match queries::get_message(&conn, msg_id64)? {
+            Some(msg) => Ok(msg),
+            None => Err(Error::ConstStr(
+                "No message with input id found despite being just added",
+            )),
         }
     }
 
