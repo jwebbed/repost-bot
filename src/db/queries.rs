@@ -21,17 +21,17 @@ pub fn get_message(conn: &Connection, msg_id: u64) -> Result<Option<Message>> {
         FROM message WHERE id=(?1)",
         [msg_id],
         |row| {
-            Ok(Message {
-                id: row.get(0)?,
-                server: row.get(1)?,
-                channel: row.get(2)?,
-                author: row.get(3)?,
-                created_at: row.get(4)?,
-                parsed_repost: row.get(5)?,
-                parsed_wordle: row.get(6)?,
-                deleted: row.get(7)?,
-                checked_old: row.get(8)?,
-            })
+            Ok(Message::new(
+                row.get(0)?, // id
+                row.get(1)?, // server
+                row.get(2)?, // channel
+                row.get(3)?, // author
+                row.get(4)?, // created_at
+                row.get(5)?, // parsed_repost
+                row.get(6)?, // parsed_wordle
+                row.get(7)?, // deleted
+                row.get(8)?, // checked_old
+            ))
         },
     )
     .optional()

@@ -116,17 +116,17 @@ impl DB {
             LIMIT 1",
         )?;
         let mut rows = stmt.query_map([server_id], |row| {
-            Ok(Message {
-                id: row.get(0)?,
-                server: row.get(1)?,
-                channel: row.get(2)?,
-                author: row.get(3)?,
-                created_at: row.get(4)?,
-                parsed_repost: row.get(5)?,
-                parsed_wordle: row.get(6)?,
-                deleted: row.get(7)?,
-                checked_old: row.get(8)?,
-            })
+            Ok(Message::new(
+                row.get(0)?, // id
+                row.get(1)?, // server
+                row.get(2)?, // channel
+                row.get(3)?, // author
+                row.get(4)?, // created_at
+                row.get(5)?, // parsed_repost
+                row.get(6)?, // parsed_wordle
+                row.get(7)?, // deleted
+                row.get(8)?, // checked_old
+            ))
         })?;
         extract_first_result(&mut rows)
     }
@@ -381,17 +381,17 @@ impl DB {
                 link: row.get(1)?,
                 channel_name: row.get(6)?,
                 server_name: row.get(7)?,
-                message: Message {
-                    id: row.get(4)?,
-                    server: row.get(2)?,
-                    channel: row.get(3)?,
-                    author: row.get(8)?,
-                    created_at: row.get(5)?,
-                    parsed_repost: row.get(9)?,
-                    parsed_wordle: row.get(10)?,
-                    deleted: row.get(11)?,
-                    checked_old: row.get(12)?,
-                },
+                message: Message::new(
+                    row.get(4)?,  // id
+                    row.get(2)?,  // server
+                    row.get(3)?,  // channel
+                    row.get(8)?,  // author
+                    row.get(5)?,  // created_at
+                    row.get(9)?,  // parsed_repost
+                    row.get(10)?, // parsed_wordle
+                    row.get(11)?, // deleted
+                    row.get(12)?, // checked_old
+                ),
             })
         })?;
 

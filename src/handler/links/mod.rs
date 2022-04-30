@@ -58,7 +58,7 @@ fn get_duration(msg: &Message, link: &Link) -> Result<Duration> {
     match ret {
         Ok(val) => Ok(val),
         Err(why) => {
-            error!("Failed to get duration with following error: {why:?}");
+            error!("Failed to get duration for the link {} (created at: {}) on message id {} (created at: {}) with following error: {why:?}", link.link, link.message.created_at, msg.id, msg.id.created_at());
             Err(Error::Internal(format!("{:?}", why)))
         }
     }
@@ -97,7 +97,10 @@ fn repost_message<'a>(msg: &'a Message, reposts: &[Link]) -> Option<Reply<'a>> {
     }
 }
 
-pub fn store_links_and_get_reposts(msg: &Message) -> Result<Option<Reply<'_>>> {
+pub fn store_links_and_get_reposts(
+    msg: &Message,
+    include_reply: bool,
+) -> Result<Option<Reply<'_>>> {
     let mut reposts = Vec::new();
     let server_id = *msg.guild_id.unwrap().as_u64();
     for link in get_links(&msg.content) {
@@ -108,17 +111,24 @@ pub fn store_links_and_get_reposts(msg: &Message) -> Result<Option<Reply<'_>>> {
                 continue;
             }
         };
-        reposts.extend(query_link_matches(filtered_link.as_str(), server_id)?);
+
+        if include_reply {
+            reposts.extend(query_link_matches(filtered_link.as_str(), server_id)?);
+        }
 
         // finally insert this link into db
         DB::db_call(|db| db.insert_link(filtered_link.as_str(), *msg.id.as_u64()))?;
     }
-    let len = reposts.len();
-    if len > 0 {
-        info!("Found {len} reposts: {reposts:?}");
-    }
+    if include_reply {
+        let len = reposts.len();
+        if len > 0 {
+            info!("Found {len} reposts: {reposts:?}");
+        }
 
-    Ok(repost_message(msg, &reposts))
+        Ok(repost_message(msg, &reposts))
+    } else {
+        Ok(None)
+    }
 }
 
 #[cfg(test)]

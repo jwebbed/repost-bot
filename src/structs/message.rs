@@ -13,13 +13,37 @@ pub struct Message {
     pub created_at: DateTime<Utc>,
 
     // flags to indicate if various things were processed
-    pub parsed_repost: Option<DateTime<Utc>>,
-    pub parsed_wordle: Option<DateTime<Utc>>,
-    pub deleted: Option<DateTime<Utc>>,
-    pub checked_old: Option<DateTime<Utc>>,
+    parsed_repost: Option<DateTime<Utc>>,
+    parsed_wordle: Option<DateTime<Utc>>,
+    deleted: Option<DateTime<Utc>>,
+    checked_old: Option<DateTime<Utc>>,
 }
 
 impl Message {
+    pub const fn new(
+        id: u64,
+        server: u64,
+        channel: u64,
+        author: Option<u64>,
+        created_at: DateTime<Utc>,
+        parsed_repost: Option<DateTime<Utc>>,
+        parsed_wordle: Option<DateTime<Utc>>,
+        deleted: Option<DateTime<Utc>>,
+        checked_old: Option<DateTime<Utc>>,
+    ) -> Message {
+        Message {
+            id,
+            server,
+            channel,
+            author,
+            created_at,
+            parsed_repost,
+            parsed_wordle,
+            deleted,
+            checked_old,
+        }
+    }
+
     /// Returns a URI that references the message in discord. When clicked inside a
     /// discord client it will auto scroll to the message
     pub fn uri(&self) -> String {

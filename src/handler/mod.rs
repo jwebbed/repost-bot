@@ -118,7 +118,7 @@ async fn process_message<'a>(
 
         // return the reply option from parsing reposts
         if !db_msg.is_repost_parsed() {
-            links::store_links_and_get_reposts(msg)?
+            links::store_links_and_get_reposts(msg, new)?
         } else {
             None
         }
