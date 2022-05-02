@@ -4,6 +4,7 @@ mod queries;
 use crate::errors::{Error, Result};
 use crate::structs::wordle::{LetterStatus, Wordle, WordleBoard};
 use crate::structs::{Channel, Link, Message, RepostCount, ReposterCount};
+use crate::utils;
 
 use log::info;
 use rusqlite::types::ToSql;
@@ -175,7 +176,7 @@ impl DB {
             msg_id64,
             server_id,
             channel_id,
-            message_id.created_at(),
+            &utils::convert_serenity_datetime(message_id.created_at())?,
             author_id
         ])?;
 
