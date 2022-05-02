@@ -1,6 +1,6 @@
 [package]
 name = "repost-bot"
-version = "0.4.0"
+version = "0.5.0"
 authors = ["Jonathan Webb <jonathan@webb.nyc>"]
 edition = "2021"
 rust-version = "1.58"
