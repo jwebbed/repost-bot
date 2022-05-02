@@ -43,12 +43,9 @@ fn regular_text_msg(kind: MessageType) -> bool {
 }
 
 async fn bot_read_channel_permission(ctx: &Context, channel: &GuildChannel) -> bool {
-    let current_user_id = ctx.cache.current_user().await.id;
-    match channel
-        .permissions_for_user(&ctx.cache, current_user_id)
-        .await
-    {
-        Ok(permissions) => permissions.contains(Permissions::READ_MESSAGES),
+    let current_user_id = ctx.cache.current_user().id;
+    match channel.permissions_for_user(&ctx.cache, current_user_id) {
+        Ok(permissions) => permissions.contains(Permissions::READ_MESSAGE_HISTORY),
         Err(_why) => false,
     }
 }
@@ -78,7 +75,7 @@ async fn process_discord_message(ctx: &Context, msg: &Message) -> Result<structs
         .guild_id
         .ok_or(Error::ConstStr("Guild id doesn't exist on message"))?;
     let server_id = *server.as_u64();
-    let server_name = &server.name(&ctx).await;
+    let server_name = &server.name(&ctx);
     db.update_server(server_id, server_name)?;
 
     // get channel id and load message
@@ -362,7 +359,7 @@ impl EventHandler for Handler {
         };
         let ctx = Arc::new(ctx);
         for guild in guilds {
-            let server_name = guild.name(&ctx).await;
+            let server_name = guild.name(&ctx);
 
             log_error(
                 db.update_server(*guild.as_u64(), &server_name),

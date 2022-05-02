@@ -30,9 +30,9 @@ time = "0.3"
 console-subscriber = "0.1.3"
 
 [dependencies.serenity]
-version = "0.10"
+version = "0.11"
 default-features = false
-features = ["client", "gateway", "rustls_backend", "model", "cache", "http"]
+features = ["client", "gateway", "rustls_backend", "model", "cache", "http", "time"]
 
 [dependencies.tokio]
 version = "1.17"

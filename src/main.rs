@@ -11,6 +11,7 @@ mod structs;
 
 use log::LevelFilter;
 use log::{error, info, warn};
+use serenity::model::gateway::GatewayIntents;
 use serenity::prelude::*;
 use simple_logger::SimpleLogger;
 use time::UtcOffset;
@@ -49,10 +50,13 @@ async fn main() {
     // init for tokio metrics
     console_subscriber::init();
 
-    // Create a new instance of the Client, logging in as a bot. This will
-    // automatically prepend your bot token with "Bot ", which is a requirement
-    // by Discord for bot users.
-    let mut client = Client::builder(&token)
+    let intents = GatewayIntents::GUILDS
+        .union(GatewayIntents::GUILD_MEMBERS)
+        .union(GatewayIntents::GUILD_MESSAGES)
+        .union(GatewayIntents::DIRECT_MESSAGES)
+        .union(GatewayIntents::MESSAGE_CONTENT);
+
+    let mut client = Client::builder(&token, intents)
         .event_handler(Handler::new())
         .await
         .expect("Err creating client");
