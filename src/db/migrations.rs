@@ -1,17 +1,19 @@
 use super::queries;
 use crate::errors::Result;
-use log::{info, warn};
+use log::{info, trace};
 use rusqlite::Connection;
 
 macro_rules! migration {
     ( $n:literal, $( $x:literal ),* ) => {
         paste::item! {
             fn [< migration_$n >] (conn: &Connection) -> Result<()> {
+                trace!("running migration {}", $n);
+
                 $(
                     conn.execute($x, [])?;
                 )*
-
                 queries::set_version(conn, $n)?;
+                trace!("finished migration {}", $n);
                 Ok(())
             }
         }
@@ -231,6 +233,7 @@ migration![
 ];
 
 fn delete_old_links(conn: &Connection) -> Result<()> {
+    trace!("starting delete old links");
     conn.execute(
         "DELETE FROM link WHERE id IN (
             SELECT L.id FROM link as L 
@@ -240,6 +243,9 @@ fn delete_old_links(conn: &Connection) -> Result<()> {
         );",
         [],
     )?;
+    // todo: make this info and include the number of links deleted
+    // leave at trace as not super useful without number
+    trace!("finished delete old links");
     Ok(())
 }
 
@@ -248,16 +254,13 @@ pub fn migrate(conn: &mut Connection) -> Result<()> {
     const FINAL_VER: u32 = 7;
 
     let ver = queries::get_version(conn)?;
-
+    info!("database version is currently: {ver} with target ver {FINAL_VER}");
     if ver == FINAL_VER {
-        info!(
-            "database version {} which matches final ver {}, no need to migrate",
-            ver, FINAL_VER
-        );
         return Ok(());
     }
 
     let tx = conn.transaction()?;
+    trace!("starting migration transaction");
     if ver < 1 {
         migration_1(&tx)?;
     }
@@ -283,9 +286,11 @@ pub fn migrate(conn: &mut Connection) -> Result<()> {
     // delete old links we don't need
     delete_old_links(&tx)?;
 
+    trace!("commiting migration transaction");
     tx.commit()?;
+    trace!("successfully commited migration transaction");
 
-    warn!("migration successful");
+    info!("migration successful");
     Ok(())
 }
 
