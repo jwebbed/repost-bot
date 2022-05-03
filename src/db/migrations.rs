@@ -258,8 +258,11 @@ pub fn migrate(conn: &mut Connection) -> Result<()> {
     if ver == FINAL_VER {
         return Ok(());
     }
+    trace!("disabling foreign keys pre-migration");
+    conn.pragma_update(None, "foreign_keys", "OFF")?;
 
     let tx = conn.transaction()?;
+
     trace!("starting migration transaction");
     if ver < 1 {
         migration_1(&tx)?;
@@ -290,6 +293,8 @@ pub fn migrate(conn: &mut Connection) -> Result<()> {
     tx.commit()?;
     trace!("successfully commited migration transaction");
 
+    conn.pragma_update(None, "foreign_keys", "ON")?;
+    trace!("enabling foreign keys post-migration");
     info!("migration successful");
     Ok(())
 }
