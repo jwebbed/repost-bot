@@ -8,7 +8,6 @@ mod db;
 mod errors;
 mod handler;
 mod structs;
-mod utils;
 
 use log::LevelFilter;
 use log::{error, info, warn};

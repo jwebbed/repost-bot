@@ -6,7 +6,6 @@ use crate::db::DB;
 use crate::errors::{Error, Result};
 use crate::structs::reply::{Reply, ReplyType};
 use crate::structs::Link;
-use crate::utils;
 
 use humantime::format_duration;
 use lazy_static::lazy_static;
@@ -52,7 +51,9 @@ fn get_links(msg: &str) -> Vec<String> {
 }
 
 fn get_duration(msg: &Message, link: &Link) -> Result<Duration> {
-    let ret = utils::convert_serenity_datetime(msg.id.created_at())?
+    let ret = msg
+        .id
+        .created_at()
         .signed_duration_since(link.message.created_at)
         .to_std();
     match ret {
