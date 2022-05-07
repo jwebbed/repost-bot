@@ -45,7 +45,9 @@ fn regular_text_msg(kind: MessageType) -> bool {
 async fn bot_read_channel_permission(ctx: &Context, channel: &GuildChannel) -> bool {
     let current_user_id = ctx.cache.current_user().id;
     match channel.permissions_for_user(&ctx.cache, current_user_id) {
-        Ok(permissions) => permissions.contains(Permissions::READ_MESSAGE_HISTORY),
+        Ok(permissions) => {
+            permissions.contains(Permissions::READ_MESSAGE_HISTORY | Permissions::VIEW_CHANNEL)
+        }
         Err(_why) => false,
     }
 }

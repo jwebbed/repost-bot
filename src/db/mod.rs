@@ -5,7 +5,7 @@ use crate::errors::{Error, Result};
 use crate::structs::wordle::{LetterStatus, Wordle, WordleBoard};
 use crate::structs::{Channel, Link, Message, RepostCount, ReposterCount};
 
-use log::info;
+use log::{debug, info};
 use rusqlite::types::ToSql;
 use rusqlite::{params, Connection};
 use serenity::model::id::{ChannelId, GuildId, MessageId};
@@ -294,7 +294,10 @@ impl DB {
         match stmt.execute(params![channel_id, name, server_id, visible]) {
             Ok(cnt) => {
                 if cnt > 0 {
-                    info!("Added channel_id {} with name {} to db", channel_id, name);
+                    debug!(
+                        "Added/updated channel_id {} with name {} to db",
+                        channel_id, name
+                    );
                 };
 
                 Ok(())
@@ -335,7 +338,7 @@ impl DB {
     }
 
     pub fn insert_link(&self, link: &str, message_id: u64) -> Result<()> {
-        info!("Inserting the following link {:?}", link);
+        debug!("Inserting the following link {:?}", link);
 
         let mut conn = self.conn.borrow_mut();
         let tx = conn.transaction()?;
@@ -372,7 +375,7 @@ impl DB {
             WHERE 
                 L.link = (?1)
                 AND S.id = (?2)
-                AND C.visible=TRUE
+                AND C.visible = TRUE
                 AND M.deleted IS NULL;",
         )?;
         let rows = stmt.query_map(params![link, server], |row| {
