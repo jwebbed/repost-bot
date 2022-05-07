@@ -13,6 +13,7 @@ static TWITTER_FIELDS: phf::Set<&'static str> = phf_set! {
 
 static YOUTUBE_FIELDS: phf::Set<&'static str> = phf_set! {
     "feature",
+    "t"
 };
 
 static GENERIC_FIELDS: phf::Set<&'static str> = phf_set! {
