@@ -369,6 +369,30 @@ mod tests {
     }
 
     #[test]
+    fn test_channel_table() -> Result<()> {
+        let ti = get_table_info("channel")?.rows;
+
+        // Expect only 4 columns in channel table
+        assert_eq!(ti.len(), 4);
+
+        assert!(ti.contains_key("id"));
+        assert!(ti.contains_key("name"));
+        assert!(ti.contains_key("visible"));
+        assert!(ti.contains_key("server"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_link_table() -> Result<()> {
+        let table = get_table_info("link")?;
+
+        assert_eq!(table.rows.len(), 2);
+        table.assert_row("id", "INTEGER", 0, None, 1);
+        table.assert_row("link", "TEXT", 1, None, 0);
+
+        Ok(())
+    }
+    #[test]
     fn test_message_table() -> Result<()> {
         let table = get_table_info("message")?;
 
@@ -386,16 +410,39 @@ mod tests {
     }
 
     #[test]
-    fn test_channel_table() -> Result<()> {
-        let ti = get_table_info("channel")?.rows;
+    fn test_message_link_table() -> Result<()> {
+        let table = get_table_info("message_link")?;
 
-        // Expect only 4 columns in channel table
-        assert_eq!(ti.len(), 4);
+        assert_eq!(table.rows.len(), 3);
+        table.assert_row("id", "INTEGER", 0, None, 1);
+        table.assert_row("link", "INTEGER", 1, None, 0);
+        table.assert_row("message", "INTEGER", 1, None, 0);
 
-        assert!(ti.contains_key("id"));
-        assert!(ti.contains_key("name"));
-        assert!(ti.contains_key("visible"));
-        assert!(ti.contains_key("server"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_nickname_table() -> Result<()> {
+        let table = get_table_info("nickname")?;
+
+        assert_eq!(table.rows.len(), 3);
+        // should change pk to be a bool as we really don't care the pk number
+        // and only that it is actually a pk
+        table.assert_row("nickname", "TEXT", 1, None, 2);
+        table.assert_row("user", "INTEGER", 1, None, 1);
+        table.assert_row("server", "INTEGER", 1, None, 3);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_server_table() -> Result<()> {
+        let table = get_table_info("server")?;
+
+        assert_eq!(table.rows.len(), 2);
+        table.assert_row("id", "INTEGER", 0, None, 1);
+        table.assert_row("name", "TEXT", 0, None, 0);
+
         Ok(())
     }
 
@@ -411,16 +458,21 @@ mod tests {
 
         Ok(())
     }
-    #[test]
-    fn test_nickname_table() -> Result<()> {
-        let table = get_table_info("nickname")?;
 
-        assert_eq!(table.rows.len(), 3);
-        // should change pk to be a bool as we really don't care the pk number
-        // and only that it is actually a pk
-        table.assert_row("nickname", "TEXT", 1, None, 2);
-        table.assert_row("user", "INTEGER", 1, None, 1);
-        table.assert_row("server", "INTEGER", 1, None, 3);
+    #[test]
+    fn test_wordle_table() -> Result<()> {
+        let table = get_table_info("wordle")?;
+
+        assert_eq!(table.rows.len(), 4 + 5 * 6);
+        table.assert_row("message", "INTEGER", 0, None, 1);
+        table.assert_row("number", "INTEGER", 1, None, 0);
+        table.assert_row("score", "INTEGER", 1, None, 0);
+        table.assert_row("hardmode", "BOOLEAN", 1, None, 0);
+        for row in 1..=6 {
+            for col in 1..=5 {
+                table.assert_row(&format!("board_r{row}c{col}"), "INTEGER", 1, None, 0);
+            }
+        }
 
         Ok(())
     }
