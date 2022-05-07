@@ -21,27 +21,31 @@ macro_rules! migration {
 }
 
 migration![
-    1,
+    7,
     // add server table
     "CREATE TABLE server (
         id INTEGER PRIMARY KEY,
         name TEXT
     );",
-    // add channel table
-    "CREATE TABLE channel (
-        id INTEGER PRIMARY KEY,
+    // add temp channel table
+    "CREATE TABLE channel ( 
+        id INTEGER PRIMARY KEY, 
         name TEXT,
+        visible BOOLEAN,
         server INTEGER,
-        FOREIGN KEY(server) REFERENCES server(id)
+        FOREIGN KEY(server) REFERENCES server(id) ON DELETE CASCADE
     );",
-    // add message table
     "CREATE TABLE message (
         id INTEGER PRIMARY KEY,
         server INTEGER,
         channel INTEGER,
         created_at NUMERIC,
-        FOREIGN KEY(server) REFERENCES server(id),
-        FOREIGN KEY(channel) REFERENCES channel(id)
+        author INTEGER DEFAULT NULL,
+        parsed_repost NUMERIC DEFAULT NULL,
+        parsed_wordle NUMERIC DEFAULT NULL,
+        deleted NUMERIC DEFAULT NULL,
+        checked_old NUMERIC DEFAULT NULL,
+        FOREIGN KEY(channel) REFERENCES channel(id) ON DELETE CASCADE
     );",
     // add link table
     "CREATE TABLE link (
@@ -50,75 +54,26 @@ migration![
     );",
     // create message_link table to connect links and the messages they're posted in
     "CREATE TABLE message_link (
-             id INTEGER PRIMARY KEY,
-             link INTEGER NOT NULL,
-             message INTEGER NOT NULL,
-             FOREIGN KEY(link) REFERENCES link(id),
-             FOREIGN KEY(message) REFERENCES message(id)
-         );",
-    // add link table index
-    "CREATE UNIQUE INDEX idx_message_link ON message_link (link, message);"
-];
-
-migration![2, "ALTER TABLE channel ADD visible BOOLEAN DEFAULT TRUE;"];
-
-// This migration essentially re-does the basic tables, adding a ON DELETE CASCADE
-// to all of the foreign key relations so we don't have to do all this
-// stuff we manually deleting in reverse order.
-//
-// Less obviously it adds a ON DELETE CASCADE to the link relation in message_link,
-// which is odd as there is currently no place where we delete a link that has a
-// message link at the moment. This is primary for if we decide to remove some
-// links from the link table because we decided we want to filter them out,
-// we don't have to manually also remove this.
-migration![
-    3,
-    // add temp channel table
-    "CREATE TABLE channel_temp ( 
-        id INTEGER PRIMARY KEY, 
-        name TEXT,
-        visible BOOLEAN,
-        server INTEGER,
-        FOREIGN KEY(server) REFERENCES server(id) ON DELETE CASCADE
-    );",
-    // add message table
-    "CREATE TABLE message_temp (
-        id INTEGER PRIMARY KEY,
-        server INTEGER,
-        channel INTEGER,
-        created_at NUMERIC,
-        FOREIGN KEY(channel) REFERENCES channel_temp(id) ON DELETE CASCADE
-    );",
-    // create message_link table to connect links and the messages they're posted in
-    "CREATE TABLE message_link_temp (
         id INTEGER PRIMARY KEY,
         link INTEGER NOT NULL,
         message INTEGER NOT NULL,
         FOREIGN KEY(link) REFERENCES link(id) ON DELETE CASCADE,
         FOREIGN KEY(message) REFERENCES message_temp(id) ON DELETE CASCADE
     );",
-    // Insert old tables entries into new temp tables
-    "INSERT INTO channel_temp (id, name, visible, server)
-    SELECT id, name, visible, server FROM channel",
-    "INSERT INTO message_temp (id, server, channel, created_at)
-    SELECT id, server, channel, created_at FROM message",
-    "INSERT INTO message_link_temp (id, link, message)
-    SELECT id, link, message FROM message_link",
-    // Drop old message_link and rename temp
-    "DROP TABLE message_link",
-    "ALTER TABLE message_link_temp RENAME TO message_link",
-    // Drop old message and rename temp
-    "DROP TABLE message",
-    "ALTER TABLE message_temp RENAME TO message",
-    // Drop old channel and rename temp
-    "DROP TABLE channel",
-    "ALTER TABLE channel_temp RENAME TO channel",
-    // add link table index
-    "CREATE UNIQUE INDEX idx_message_link ON message_link (link, message);"
-];
-
-migration![
-    4,
+    "CREATE TABLE user ( 
+        id INTEGER PRIMARY KEY, 
+        username TEXT NOT NULL,
+        bot BOOL NOT NULL,
+        discriminator INTEGER NOT NULL
+    );",
+    "CREATE TABLE nickname ( 
+        nickname TEXT NOT NULL,
+        user INTEGER NOT NULL,
+        server INTEGER NOT NULL,
+        PRIMARY KEY (user, nickname, server),
+        FOREIGN KEY(server) REFERENCES server(id) ON DELETE CASCADE,
+        FOREIGN KEY(user) REFERENCES user(id) ON DELETE CASCADE
+    );",
     "CREATE TABLE wordle ( 
         message INTEGER PRIMARY KEY,
         number INTEGER NOT NULL,
@@ -163,73 +118,10 @@ migration![
 
         FOREIGN KEY(message) REFERENCES message(id) ON DELETE CASCADE
     );",
-    "CREATE UNIQUE INDEX idx_wordle_user ON wordle (message, score, hardmode);",
-    "ALTER TABLE message ADD author INTEGER DEFAULT NULL;",
-    "ALTER TABLE message ADD parsed_repost BOOLEAN DEFAULT FALSE;",
-    "ALTER TABLE message ADD parsed_wordle BOOLEAN DEFAULT FALSE;",
-    // Want the default to be FALSE for all new entries, but all
-    // existing at time of migration should be TRUE
-    "UPDATE message SET parsed_repost = TRUE;"
-];
-
-migration![
-    5,
-    "CREATE TABLE user ( 
-        id INTEGER PRIMARY KEY, 
-        username TEXT NOT NULL,
-        bot BOOL NOT NULL,
-        discriminator INTEGER NOT NULL
-    );",
-    "CREATE TABLE nickname ( 
-        nickname TEXT NOT NULL,
-        user INTEGER NOT NULL,
-        server INTEGER NOT NULL,
-        PRIMARY KEY (user, nickname, server),
-        FOREIGN KEY(server) REFERENCES server(id) ON DELETE CASCADE,
-        FOREIGN KEY(user) REFERENCES user(id) ON DELETE CASCADE
-    );",
+    "CREATE INDEX idx_msg ON message (server, channel, author);",
     "CREATE INDEX idx_user ON user (username, discriminator, bot);",
     "CREATE UNIQUE INDEX idx_nickname ON nickname (server, user, nickname);",
-    "CREATE INDEX idx_msg ON message (server, channel, author);"
-];
-
-migration![6, "ALTER TABLE message ADD deleted BOOLEAN DEFAULT FALSE;"];
-
-migration![
-    7,
-    "CREATE TABLE message_temp (
-        id INTEGER PRIMARY KEY,
-        server INTEGER,
-        channel INTEGER,
-        created_at NUMERIC,
-        author INTEGER DEFAULT NULL,
-        parsed_repost NUMERIC DEFAULT NULL,
-        parsed_wordle NUMERIC DEFAULT NULL,
-        deleted NUMERIC DEFAULT NULL,
-        checked_old NUMERIC DEFAULT NULL,
-        FOREIGN KEY(channel) REFERENCES channel(id) ON DELETE CASCADE
-    );",
-    "DROP INDEX idx_msg;",
-    "INSERT INTO message_temp (
-        id, server, channel, created_at, author, parsed_repost, parsed_wordle, deleted
-    )
-    SELECT id, server, channel, created_at, author,  
-        CASE 
-            WHEN parsed_repost=TRUE THEN datetime('now')
-            ELSE NULL
-        END as parsed_repost,
-        CASE 
-            WHEN parsed_wordle=TRUE THEN datetime('now')
-            ELSE NULL
-        END as parsed_wordle,
-        CASE 
-            WHEN deleted=TRUE THEN datetime('now')
-            ELSE NULL
-        END as deleted
-    FROM message",
-    "DROP TABLE message",
-    "ALTER TABLE message_temp RENAME TO message",
-    "CREATE INDEX idx_msg ON message (server, channel, author);"
+    "CREATE UNIQUE INDEX idx_wordle_user ON wordle (message, score, hardmode);"
 ];
 
 fn delete_old_links(conn: &Connection) -> Result<()> {
@@ -252,11 +144,15 @@ fn delete_old_links(conn: &Connection) -> Result<()> {
 pub fn migrate(conn: &mut Connection) -> Result<()> {
     // be sure to increment this everytime a new migration is added
     const FINAL_VER: u32 = 7;
+    const MIN_VER: u32 = 7;
 
     let ver = queries::get_version(conn)?;
     info!("database version is currently: {ver} with target ver {FINAL_VER}");
     if ver == FINAL_VER {
         return Ok(());
+    }
+    if ver > 0 && ver < MIN_VER {
+        panic!("database current version {ver}, cannot migrate a database < {MIN_VER} or not 0");
     }
     trace!("disabling foreign keys pre-migration");
     conn.pragma_update(None, "foreign_keys", "OFF")?;
@@ -264,24 +160,6 @@ pub fn migrate(conn: &mut Connection) -> Result<()> {
     let tx = conn.transaction()?;
 
     trace!("starting migration transaction");
-    if ver < 1 {
-        migration_1(&tx)?;
-    }
-    if ver < 2 {
-        migration_2(&tx)?;
-    }
-    if ver < 3 {
-        migration_3(&tx)?;
-    }
-    if ver < 4 {
-        migration_4(&tx)?;
-    }
-    if ver < 5 {
-        migration_5(&tx)?;
-    }
-    if ver < 6 {
-        migration_6(&tx)?;
-    }
     if ver < 7 {
         migration_7(&tx)?;
     }
