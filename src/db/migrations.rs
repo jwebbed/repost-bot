@@ -58,7 +58,7 @@ migration![
         link INTEGER NOT NULL,
         message INTEGER NOT NULL,
         FOREIGN KEY(link) REFERENCES link(id) ON DELETE CASCADE,
-        FOREIGN KEY(message) REFERENCES message_temp(id) ON DELETE CASCADE
+        FOREIGN KEY(message) REFERENCES message(id) ON DELETE CASCADE
     );",
     "CREATE TABLE user ( 
         id INTEGER PRIMARY KEY, 
@@ -124,6 +124,29 @@ migration![
     "CREATE UNIQUE INDEX idx_wordle_user ON wordle (message, score, hardmode);"
 ];
 
+migration![
+    8,
+    "ALTER TABLE message ADD COLUMN parsed_embed NUMERIC DEFAULT NULL;",
+    "CREATE TABLE image (
+        id INTEGER PRIMARY KEY,
+        url TEXT UNIQUE,
+        c1 TEXT NOT NULL,
+        c2 TEXT NOT NULL,
+        c3 TEXT NOT NULL,
+        c4 TEXT NOT NULL,
+        c5 TEXT NOT NULL,
+        hash TEXT NOT NULL
+    );",
+    "CREATE TABLE message_image (
+        id INTEGER PRIMARY KEY,
+        image INTEGER NOT NULL,
+        message INTEGER NOT NULL,
+        FOREIGN KEY(image) REFERENCES image(id) ON DELETE CASCADE,
+        FOREIGN KEY(message) REFERENCES message(id) ON DELETE CASCADE
+    );",
+    "CREATE INDEX idx_image ON image (c1, c2, c3, c4, c5, hash);"
+];
+
 fn delete_old_links(conn: &Connection) -> Result<()> {
     trace!("starting delete old links");
     conn.execute(
@@ -143,7 +166,7 @@ fn delete_old_links(conn: &Connection) -> Result<()> {
 
 pub fn migrate(conn: &mut Connection) -> Result<()> {
     // be sure to increment this everytime a new migration is added
-    const FINAL_VER: u32 = 7;
+    const FINAL_VER: u32 = 8;
     const MIN_VER: u32 = 7;
 
     let ver = queries::get_version(conn)?;
@@ -160,10 +183,14 @@ pub fn migrate(conn: &mut Connection) -> Result<()> {
     let tx = conn.transaction()?;
 
     trace!("starting migration transaction");
+
     if ver < 7 {
         migration_7(&tx)?;
     }
 
+    if ver < 8 {
+        migration_8(&tx)?;
+    }
     // delete old links we don't need
     delete_old_links(&tx)?;
 

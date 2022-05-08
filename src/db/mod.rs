@@ -7,7 +7,7 @@ use crate::structs::{Channel, Link, Message, RepostCount, ReposterCount};
 
 use log::{debug, info};
 use rusqlite::types::ToSql;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, Row};
 use serenity::model::id::{ChannelId, GuildId, MessageId};
 use std::cell::RefCell;
 
@@ -104,14 +104,16 @@ impl DB {
         let conn = self.conn.borrow();
         let mut stmt = conn.prepare(
             "SELECT M.id, M.server, M.channel, M.author, M.created_at, 
-                    M.parsed_repost, M.parsed_wordle, M.deleted, M.checked_old
+                    M.parsed_repost, M.parsed_wordle, M.deleted, M.checked_old, 
+                    M.parsed_embed
             FROM message as M 
             JOIN channel as C on C.id=M.channel
             WHERE 
                 C.visible=TRUE AND
                 M.deleted IS NULL AND
                 M.server=(?1) AND 
-                M.checked_old IS NULL
+                ( M.checked_old IS NULL OR
+                  M.parsed_embed IS NULL )
             ORDER BY M.created_at desc
             LIMIT 1",
         )?;
@@ -124,6 +126,7 @@ impl DB {
                 row.get(4)?, // created_at
                 row.get(5)?, // parsed_repost
                 row.get(6)?, // parsed_wordle
+                row.get(9)?, // parsed_embed
                 row.get(7)?, // deleted
                 row.get(8)?, // checked_old
             ))
@@ -232,7 +235,10 @@ impl DB {
         let conn = self.conn.borrow();
         conn.execute(
             "UPDATE message 
-            SET parsed_repost=datetime('now'), parsed_wordle=datetime('now')  
+            SET 
+                parsed_repost=datetime('now'), 
+                parsed_wordle=datetime('now'),
+                parsed_embed=datetime('now')
             WHERE id=(?1)",
             [*message_id.as_u64()],
         )?;
@@ -360,13 +366,50 @@ impl DB {
         Ok(())
     }
 
+    pub fn insert_image(&self, url: &str, hash: &str, message_id: u64) -> Result<()> {
+        debug!("Inserting the following image hash {:?}", hash);
+
+        let mut conn = self.conn.borrow_mut();
+        let tx = conn.transaction()?;
+
+        let mut chars = hash.chars();
+
+        tx.execute(
+            "INSERT INTO image (c1, c2, c3, c4, c5, hash, url) 
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            ON CONFLICT(url) DO NOTHING;",
+            params![
+                String::from(chars.nth(0).unwrap()),
+                String::from(chars.nth(1).unwrap()),
+                String::from(chars.nth(2).unwrap()),
+                String::from(chars.nth(3).unwrap()),
+                String::from(chars.nth(4).unwrap()),
+                hash,
+                url
+            ],
+        )?;
+
+        tx.execute(
+            "INSERT INTO message_image (image, message)
+            VALUES (
+                (SELECT id FROM image WHERE url=(?1)),
+                ?2
+            );",
+            params![url, message_id],
+        )?;
+
+        tx.commit()?;
+
+        Ok(())
+    }
+
     pub fn query_links(&self, link: &str, server: u64) -> Result<Vec<Link>> {
         let conn = self.conn.borrow();
         let mut stmt = conn.prepare(
             "SELECT 
                 L.id, L.link, S.id, C.id, M.id, M.created_at, C.name, 
                 S.name, M.author, M.parsed_repost, M.parsed_wordle, 
-                M.deleted, M.checked_old
+                M.deleted, M.checked_old, M.parsed_embed
             FROM link AS L 
             JOIN message_link as ML on ML.link=L.id
             JOIN message as M on ML.message=M.id
@@ -392,11 +435,75 @@ impl DB {
                     row.get(5)?,  // created_at
                     row.get(9)?,  // parsed_repost
                     row.get(10)?, // parsed_wordle
+                    row.get(13)?, // parsed_embed
                     row.get(11)?, // deleted
                     row.get(12)?, // checked_old
                 ),
             })
         })?;
+
+        let mut links = Vec::new();
+        for row in rows {
+            links.push(row?)
+        }
+
+        Ok(links)
+    }
+
+    pub fn hash_matches(&self, hash: &str, server: u64) -> Result<Vec<(Message, String)>> {
+        let conn = self.conn.borrow();
+        let mut chars = hash.chars();
+
+        let mut stmt = conn.prepare(
+            "SELECT M.id, M.server, M.channel, M.author, M.created_at, 
+            M.parsed_repost, M.parsed_wordle, M.deleted, M.checked_old, 
+            M.parsed_embed, I.hash
+            FROM image as I
+            JOIN message_image as MI on MI.image=I.id
+            JOIN message as M on M.id=MI.message
+            JOIN server AS S ON M.server=S.id
+            JOIN channel AS C ON M.channel=C.id
+            WHERE 
+            (   I.hash = (?6) OR
+                ( I.c1 = (?1) AND I.c2 = (?2) AND I.c3 = (?3) AND I.c4 = (?4) ) OR
+                ( I.c2 = (?2) AND I.c3 = (?3) AND I.c4 = (?4) AND I.c5 = (?5) ) OR
+                ( I.c3 = (?3) AND I.c4 = (?4) AND I.c5 = (?5) AND I.c1 = (?1) ) OR
+                ( I.c4 = (?4) AND I.c5 = (?5) AND I.c1 = (?1) AND I.c2 = (?2) ) OR
+                ( I.c5 = (?5) AND I.c1 = (?1) AND I.c2 = (?2) AND I.c3 = (?3) )
+            )
+            AND S.id = (?7)
+            AND C.visible = TRUE
+            AND M.deleted IS NULL",
+        )?;
+
+        let rows = stmt.query_map(
+            params![
+                String::from(chars.nth(0).unwrap()),
+                String::from(chars.nth(1).unwrap()),
+                String::from(chars.nth(2).unwrap()),
+                String::from(chars.nth(3).unwrap()),
+                String::from(chars.nth(4).unwrap()),
+                hash,
+                server
+            ],
+            |row: &Row<'_>| -> rusqlite::Result<(Message, String)> {
+                Ok((
+                    Message::new(
+                        row.get(0)?, // id
+                        row.get(1)?, // server
+                        row.get(2)?, // channel
+                        row.get(3)?, // author
+                        row.get(4)?, // created_at
+                        row.get(5)?, // parsed_repost
+                        row.get(6)?, // parsed_wordle
+                        row.get(9)?, // parsed_embed
+                        row.get(7)?, // deleted
+                        row.get(8)?, // checked_old
+                    ),
+                    row.get(10)?,
+                ))
+            },
+        )?;
 
         let mut links = Vec::new();
         for row in rows {

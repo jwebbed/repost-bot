@@ -17,7 +17,7 @@ pub fn set_version(conn: &Connection, version: u32) -> Result<()> {
 pub fn get_message(conn: &Connection, msg_id: u64) -> Result<Option<Message>> {
     conn.query_row(
         "SELECT id, server, channel, author, created_at, parsed_repost, 
-                parsed_wordle, deleted, checked_old
+                parsed_wordle, deleted, checked_old, parsed_embed
         FROM message WHERE id=(?1)",
         [msg_id],
         |row| {
@@ -29,6 +29,7 @@ pub fn get_message(conn: &Connection, msg_id: u64) -> Result<Option<Message>> {
                 row.get(4)?, // created_at
                 row.get(5)?, // parsed_repost
                 row.get(6)?, // parsed_wordle
+                row.get(9)?, // parsed_embed
                 row.get(7)?, // deleted
                 row.get(8)?, // checked_old
             ))

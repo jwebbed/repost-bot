@@ -1,4 +1,5 @@
 mod commands;
+mod images;
 mod links;
 mod wordle;
 
@@ -115,9 +116,23 @@ async fn process_message<'a>(
             wordle::check_wordle(msg);
         }
 
+        let image_response = if !db_msg.is_embed_parsed() {
+            images::store_images(msg, new).await?
+        } else {
+            None
+        };
+
         // return the reply option from parsing reposts
-        if !db_msg.is_repost_parsed() {
+        let response = if !db_msg.is_repost_parsed() {
             links::store_links_and_get_reposts(msg, new)?
+        } else {
+            None
+        };
+
+        if response.is_some() {
+            response
+        } else if image_response.is_some() {
+            image_response
         } else {
             None
         }

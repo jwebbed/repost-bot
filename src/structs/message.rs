@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serenity::model::id::{ChannelId, GuildId, MessageId};
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct Message {
     // snowflakes referencing the various attributes
     pub id: u64,     // the snowflake of this message
@@ -15,6 +15,7 @@ pub struct Message {
     // flags to indicate if various things were processed
     parsed_repost: Option<DateTime<Utc>>,
     parsed_wordle: Option<DateTime<Utc>>,
+    parsed_embed: Option<DateTime<Utc>>,
     deleted: Option<DateTime<Utc>>,
     checked_old: Option<DateTime<Utc>>,
 }
@@ -28,6 +29,7 @@ impl Message {
         created_at: DateTime<Utc>,
         parsed_repost: Option<DateTime<Utc>>,
         parsed_wordle: Option<DateTime<Utc>>,
+        parsed_embed: Option<DateTime<Utc>>,
         deleted: Option<DateTime<Utc>>,
         checked_old: Option<DateTime<Utc>>,
     ) -> Message {
@@ -39,6 +41,7 @@ impl Message {
             created_at,
             parsed_repost,
             parsed_wordle,
+            parsed_embed,
             deleted,
             checked_old,
         }
@@ -56,6 +59,10 @@ impl Message {
 
     pub const fn is_wordle_parsed(&self) -> bool {
         self.parsed_wordle.is_some()
+    }
+
+    pub const fn is_embed_parsed(&self) -> bool {
+        self.parsed_embed.is_some()
     }
 
     pub const fn is_deleted(&self) -> bool {
