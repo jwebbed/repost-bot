@@ -15,6 +15,7 @@ use std::time::Instant;
 
 static IGNORED_PROVIDERS: phf::Set<&'static str> = phf_set! {
     "Tenor",
+    "YouTube",
 };
 
 fn get_image_hash(bytes: &Vec<u8>) -> Result<ImageHash> {
