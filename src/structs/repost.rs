@@ -3,7 +3,7 @@ use crate::structs::Message;
 
 use humantime::format_duration;
 use std::cell::RefCell;
-use std::time::{Duration, Instant};
+
 use std::vec::Vec;
 
 #[derive(Debug, Copy, Clone)]
@@ -23,7 +23,7 @@ pub struct RepostSet {
 }
 
 impl RepostSet {
-    pub fn new() -> RepostSet {
+    pub const fn new() -> RepostSet {
         RepostSet {
             reposts: RefCell::new(vec![]),
         }

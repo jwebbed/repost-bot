@@ -5,7 +5,7 @@ use crate::DB;
 
 use image::io::Reader;
 use img_hash::{HashAlg, HasherConfig, ImageHash};
-use log::{error, info, warn};
+use log::{info, warn};
 use phf::phf_set;
 use serenity::model::prelude::Message;
 use std::io::Cursor;
@@ -33,7 +33,7 @@ async fn download_and_hash(url: &str, proxy_url: Option<&String>) -> Result<Opti
         None => url,
     };
     let bytes = reqwest::get(req_url).await?.bytes().await?.to_vec();
-    if bytes.len() > 0 {
+    if !bytes.is_empty() {
         Ok(Some(get_image_hash(&bytes)?))
     } else {
         info!("received url with 0 bytes, can't process");
@@ -44,7 +44,7 @@ async fn download_and_hash(url: &str, proxy_url: Option<&String>) -> Result<Opti
 pub async fn store_images(msg: &Message, include_reply: bool) -> Result<Option<Reply<'_>>> {
     let msg_id = *msg.id.as_u64();
     let mut hashes = Vec::new();
-    if msg.attachments.len() > 0 {
+    if !msg.attachments.is_empty() {
         info!("msg {msg_id} has {} attachments", msg.attachments.len());
     }
     for attachment in &msg.attachments {
@@ -74,13 +74,13 @@ pub async fn store_images(msg: &Message, include_reply: bool) -> Result<Option<R
         hashes.push((hash, &attachment.url));
     }
 
-    if msg.embeds.len() > 0 {
+    if !msg.embeds.is_empty() {
         info!("msg {msg_id} has {} embeds", msg.embeds.len());
     }
     for embed in &msg.embeds {
         if let Some(provider) = &embed.provider {
             if let Some(provider_name) = &provider.name {
-                if IGNORED_PROVIDERS.contains(&provider_name) {
+                if IGNORED_PROVIDERS.contains(provider_name) {
                     info!("provider {provider_name} is ignored, skipping this embed");
                     continue;
                 }
@@ -111,7 +111,7 @@ pub async fn store_images(msg: &Message, include_reply: bool) -> Result<Option<R
             );
 
             for (db_msg, db_hash_b64) in &matches {
-                if let Ok(db_hash) = ImageHash::from_base64(&db_hash_b64) {
+                if let Ok(db_hash) = ImageHash::from_base64(db_hash_b64) {
                     let distance = hash.dist(&db_hash);
                     info!("Hamming Distance for db_hash {db_hash_b64} is {distance}");
                     if distance < 5 {

@@ -379,7 +379,7 @@ impl DB {
             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
             ON CONFLICT(url) DO NOTHING;",
             params![
-                String::from(chars.nth(0).unwrap()),
+                String::from(chars.next().unwrap()),
                 String::from(chars.nth(1).unwrap()),
                 String::from(chars.nth(2).unwrap()),
                 String::from(chars.nth(3).unwrap()),
@@ -478,7 +478,7 @@ impl DB {
 
         let rows = stmt.query_map(
             params![
-                String::from(chars.nth(0).unwrap()),
+                String::from(chars.next().unwrap()),
                 String::from(chars.nth(1).unwrap()),
                 String::from(chars.nth(2).unwrap()),
                 String::from(chars.nth(3).unwrap()),

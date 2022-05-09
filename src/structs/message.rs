@@ -1,5 +1,3 @@
-use crate::errors::Result;
-
 use chrono::{DateTime, Utc};
 use log::debug;
 use serenity::model::id::{ChannelId, GuildId, MessageId};
