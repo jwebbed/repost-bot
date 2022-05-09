@@ -1,5 +1,9 @@
+use crate::errors::Result;
+
 use chrono::{DateTime, Utc};
+use log::debug;
 use serenity::model::id::{ChannelId, GuildId, MessageId};
+use std::time::Duration;
 
 #[derive(Debug, Copy, Clone)]
 pub struct Message {
@@ -80,5 +84,18 @@ impl Message {
     /// should start returning false to reduce backlog.
     pub const fn is_checked_old(&self) -> bool {
         self.checked_old.is_some()
+    }
+
+    pub fn get_duration(&self, current: DateTime<Utc>) -> Option<Duration> {
+        match current.signed_duration_since(self.created_at).to_std() {
+            Ok(ret) => Some(ret),
+            Err(err) => {
+                debug!(
+                    "failed to calculate duration from object {} to input {current} with err {err:?}",
+                    self.created_at
+                );
+                None
+            }
+        }
     }
 }

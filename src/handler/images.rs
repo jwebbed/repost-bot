@@ -1,16 +1,14 @@
-use crate::errors::{Error, Result};
-use crate::structs;
-use crate::structs::reply::{Reply, ReplyType};
+use crate::errors::Result;
+use crate::structs::reply::Reply;
+use crate::structs::repost::{RepostSet, RepostType};
 use crate::DB;
 
-use humantime::format_duration;
 use image::io::Reader;
 use img_hash::{HashAlg, HasherConfig, ImageHash};
 use log::{error, info, warn};
 use phf::phf_set;
 use serenity::model::prelude::Message;
 use std::io::Cursor;
-use std::time::Duration;
 use std::time::Instant;
 
 static IGNORED_PROVIDERS: phf::Set<&'static str> = phf_set! {
@@ -40,53 +38,6 @@ async fn download_and_hash(url: &str, proxy_url: Option<&String>) -> Result<Opti
     } else {
         info!("received url with 0 bytes, can't process");
         Ok(None)
-    }
-}
-
-fn get_duration(msg: &Message, link: &structs::Message) -> Result<Duration> {
-    let ret = msg
-        .id
-        .created_at()
-        .signed_duration_since(link.created_at)
-        .to_std();
-    match ret {
-        Ok(val) => Ok(val),
-        Err(why) => {
-            error!("Failed to get duration for msg (created at: {}) on message id {} (created at: {}) with following error: {why:?}", link.created_at, msg.id, msg.id.created_at());
-            Err(Error::Internal(format!("{:?}", why)))
-        }
-    }
-}
-fn repost_text(msg: &Message, link: &structs::Message) -> String {
-    let duration_text = match get_duration(msg, link) {
-        Ok(val) => format_duration(val).to_string(),
-        Err(_) => "".to_string(),
-    };
-
-    format!("{} {}", duration_text, link.uri())
-}
-
-fn repost_message<'a>(msg: &'a Message, reposts: &[structs::Message]) -> Option<Reply<'a>> {
-    if !reposts.is_empty() {
-        let repost_str = if reposts.len() > 1 {
-            format!(
-                "\n{}",
-                reposts
-                    .iter()
-                    .map(|x| repost_text(msg, x))
-                    .collect::<Vec<String>>()
-                    .join("\n")
-            )
-        } else {
-            repost_text(msg, &reposts[0])
-        };
-
-        Some(Reply::new(
-            format!("🚨 IMAGE 🚨 REPOST 🚨 {repost_str}"),
-            ReplyType::Message(msg),
-        ))
-    } else {
-        None
     }
 }
 
@@ -149,7 +100,7 @@ pub async fn store_images(msg: &Message, include_reply: bool) -> Result<Option<R
         }
     }
     let db = DB::get_db()?;
-    let mut reposts = Vec::new();
+    let reposts = RepostSet::new();
     for (hash, url) in hashes {
         if include_reply {
             let b64 = hash.to_base64();
@@ -164,7 +115,7 @@ pub async fn store_images(msg: &Message, include_reply: bool) -> Result<Option<R
                     let distance = hash.dist(&db_hash);
                     info!("Hamming Distance for db_hash {db_hash_b64} is {distance}");
                     if distance < 5 {
-                        reposts.push(*db_msg);
+                        reposts.add(RepostType::Image, *db_msg);
                     }
                 }
             }
@@ -173,7 +124,7 @@ pub async fn store_images(msg: &Message, include_reply: bool) -> Result<Option<R
     }
 
     if reposts.len() > 0 {
-        Ok(repost_message(msg, &reposts))
+        Ok(reposts.generate_reply_for_message(msg))
     } else {
         Ok(None)
     }

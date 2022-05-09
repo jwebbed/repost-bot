@@ -1,6 +1,7 @@
 pub mod link;
 pub mod message;
 pub mod reply;
+pub mod repost;
 pub mod wordle;
 
 pub use link::Channel;
