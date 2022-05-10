@@ -2,100 +2,108 @@ use crate::structs::reply::{Reply, ReplyType};
 use crate::structs::Message;
 
 use humantime::format_duration;
-use std::cell::RefCell;
-
+use log::error;
+use std::collections::HashSet;
 use std::vec::Vec;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
 pub enum RepostType {
     Link,
     Image,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
 struct Repost {
     repost_type: RepostType,
     message: Message,
 }
 
 pub struct RepostSet {
-    reposts: RefCell<Vec<Repost>>,
+    reposts: HashSet<Repost>,
 }
 
+#[allow(dead_code, unused_must_use)]
 impl RepostSet {
-    pub const fn new() -> RepostSet {
+    pub fn new() -> RepostSet {
         RepostSet {
-            reposts: RefCell::new(vec![]),
+            reposts: HashSet::new(),
         }
     }
 
-    pub fn add(&self, repost_type: RepostType, message: Message) {
-        self.reposts.borrow_mut().push(Repost {
+    pub fn add(&mut self, repost_type: RepostType, message: Message) {
+        self.reposts.insert(Repost {
             repost_type,
             message,
         });
     }
 
-    pub fn union(&self, other: RepostSet) {
-        self.reposts
-            .borrow_mut()
-            .extend(other.reposts.borrow().iter());
+    pub fn union(&mut self, other: &RepostSet) {
+        self.reposts.union(&other.reposts);
     }
 
     pub fn len(&self) -> usize {
-        self.reposts.borrow().len()
+        self.reposts.len()
     }
 
     pub fn generate_reply_for_message<'a>(
         &self,
         msg: &'a serenity::model::prelude::Message,
     ) -> Option<Reply<'a>> {
-        let reposts = self.reposts.borrow();
-        if !reposts.is_empty() {
-            let repost_str = if reposts.len() > 1 {
-                format!(
-                    "\n{}",
-                    reposts
+        if !self.reposts.is_empty() {
+            let response = if self.reposts.len() > 1 {
+                // need to do something more advanced here to account for multiple types of reposts
+                let mut to_process = Vec::from_iter(self.reposts.clone());
+                to_process.sort_by(|a, b| a.message.created_at.cmp(&b.message.created_at));
+
+                Some(format!(
+                    "🚨 REPOST 🚨\n{}",
+                    to_process
                         .iter()
-                        .map(|x| repost_text(x, msg))
+                        .map(|x| repost_text(&x.message, msg))
                         .collect::<Vec<String>>()
                         .join("\n")
-                )
+                ))
             } else {
-                repost_text(&reposts[0], msg)
+                if let Some(repost) = self.reposts.iter().next() {
+                    let prefix = match repost.repost_type {
+                        RepostType::Link => "LINK",
+                        RepostType::Image => "IMAGE",
+                    };
+                    let link_text = repost_text(&repost.message, msg);
+
+                    Some(format!("🚨 {prefix} 🚨 REPOST 🚨 {link_text}"))
+                } else {
+                    // in principle this code path should be impossible since we've already checked the length
+                    error!(
+                        "RepostSet had 1 element but got None when extracting it {:?}",
+                        self.reposts
+                    );
+                    None
+                }
             };
-            Some(Reply::new(
-                format!("🚨 REPOST 🚨 {repost_str}"),
-                ReplyType::Message(msg),
-            ))
+
+            response.map(|x| Reply::new(x, ReplyType::Message(msg)))
         } else {
             None
         }
     }
 }
 
-fn repost_text(repost: &Repost, msg: &serenity::model::prelude::Message) -> String {
-    let duration_text = match repost.message.get_duration(*msg.id.created_at()) {
+fn repost_text(
+    repost_message: &Message,
+    response_msg: &serenity::model::prelude::Message,
+) -> String {
+    /*  let duration_text = match {
         Some(duration) => format_duration(duration).to_string(),
         None => "".to_string(),
-    };
+    };*/
 
-    format!("{} {}", duration_text, repost.message.uri())
+    format!(
+        "{} {}",
+        repost_message
+            .get_duration(*response_msg.id.created_at())
+            .map_or("".to_string(), |duration| format_duration(duration)
+                .to_string()),
+        repost_message.uri()
+    )
 }
-
-/*
-fn get_duration(msg: &Message, link: &structs::Message) -> Result<Duration> {
-    let ret = msg
-        .id
-        .created_at()
-        .signed_duration_since(link.created_at)
-        .to_std();
-    match ret {
-        Ok(val) => Ok(val),
-        Err(why) => {
-            error!("Failed to get duration for msg (created at: {}) on message id {} (created at: {}) with following error: {why:?}", link.created_at, msg.id, msg.id.created_at());
-            Err(Error::Internal(format!("{:?}", why)))
-        }
-    }
-}
-*/

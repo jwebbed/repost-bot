@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use log::debug;
 use serenity::model::id::{ChannelId, GuildId, MessageId};
+use std::hash::{Hash, Hasher};
 use std::time::Duration;
 
 #[derive(Debug, Copy, Clone)]
@@ -95,5 +96,33 @@ impl Message {
                 None
             }
         }
+    }
+}
+
+impl Hash for Message {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
+
+impl PartialEq for Message {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+impl Eq for Message {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_message_equality() {
+        // in reality every message with the same id should always have the same data.
+        // for test sake will give both different data with same id to ensure it's only
+        // checking the id
+        let message1 = Message::new(1, 1, 1, None, Utc::now(), None, None, None, None, None);
+        let message2 = Message::new(1, 2, 2, None, Utc::now(), None, None, None, None, None);
+
+        assert_eq!(message1, message2);
     }
 }

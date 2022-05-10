@@ -84,6 +84,7 @@ pub async fn store_images(msg: &Message, include_reply: bool) -> Result<Option<R
                     info!("provider {provider_name} is ignored, skipping this embed");
                     continue;
                 }
+                info!("provider {provider_name} is not ignored, processing");
             }
         }
 
@@ -100,7 +101,7 @@ pub async fn store_images(msg: &Message, include_reply: bool) -> Result<Option<R
         }
     }
     let db = DB::get_db()?;
-    let reposts = RepostSet::new();
+    let mut reposts = RepostSet::new();
     for (hash, url) in hashes {
         if include_reply {
             let b64 = hash.to_base64();
