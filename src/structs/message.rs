@@ -84,6 +84,14 @@ impl Message {
     pub const fn is_checked_old(&self) -> bool {
         self.checked_old.is_some()
     }
+    /// Returns true if message is less than 15s old
+    pub fn is_recent(&self) -> bool {
+        const RECENT_THRESHOLD: i64 = 15;
+        let seconds = Utc::now()
+            .signed_duration_since(self.created_at)
+            .num_seconds();
+        seconds < RECENT_THRESHOLD
+    }
 
     pub fn get_duration(&self, current: DateTime<Utc>) -> Option<Duration> {
         match current.signed_duration_since(self.created_at).to_std() {

@@ -5,6 +5,7 @@ use filter::filtered_url;
 use crate::db::DB;
 use crate::errors::{Error, Result};
 use crate::structs::reply::{Reply, ReplyType};
+use crate::structs::repost::{RepostSet, RepostType};
 use crate::structs::Link;
 
 use humantime::format_duration;
@@ -50,59 +51,11 @@ fn get_links(msg: &str) -> Vec<String> {
         .collect()
 }
 
-fn get_duration(msg: &Message, link: &Link) -> Result<Duration> {
-    let ret = msg
-        .id
-        .created_at()
-        .signed_duration_since(link.message.created_at)
-        .to_std();
-    match ret {
-        Ok(val) => Ok(val),
-        Err(why) => {
-            error!("Failed to get duration for the link {} (created at: {}) on message id {} (created at: {}) with following error: {why:?}", link.link, link.message.created_at, msg.id, msg.id.created_at());
-            Err(Error::Internal(format!("{:?}", why)))
-        }
-    }
-}
-
-fn repost_text(msg: &Message, link: &Link) -> String {
-    let duration_text = match get_duration(msg, link) {
-        Ok(val) => format_duration(val).to_string(),
-        Err(_) => "".to_string(),
-    };
-
-    format!("{} {}", duration_text, link.message.uri())
-}
-
-fn repost_message<'a>(msg: &'a Message, reposts: &[Link]) -> Option<Reply<'a>> {
-    if !reposts.is_empty() {
-        let repost_str = if reposts.len() > 1 {
-            format!(
-                "\n{}",
-                reposts
-                    .iter()
-                    .map(|x| repost_text(msg, x))
-                    .collect::<Vec<String>>()
-                    .join("\n")
-            )
-        } else {
-            repost_text(msg, &reposts[0])
-        };
-
-        Some(Reply::new(
-            format!("🚨 REPOST 🚨 {repost_str}"),
-            ReplyType::Message(msg),
-        ))
-    } else {
-        None
-    }
-}
-
 pub fn store_links_and_get_reposts(
     msg: &Message,
     include_reply: bool,
-) -> Result<Option<Reply<'_>>> {
-    let mut reposts = Vec::new();
+) -> Result<Option<RepostSet>> {
+    let mut reposts = RepostSet::new();
     let server_id = *msg.guild_id.unwrap().as_u64();
     for link in get_links(&msg.content) {
         let filtered_link = match filtered_url(&link) {
@@ -114,19 +67,19 @@ pub fn store_links_and_get_reposts(
         };
 
         if include_reply {
-            reposts.extend(query_link_matches(filtered_link.as_str(), server_id)?);
+            let repost_links = query_link_matches(filtered_link.as_str(), server_id)?;
+            for rlink in repost_links {
+                reposts.add(rlink.message, RepostType::Link);
+            }
         }
 
         // finally insert this link into db
         DB::db_call(|db| db.insert_link(filtered_link.as_str(), *msg.id.as_u64()))?;
     }
-    if include_reply {
-        let len = reposts.len();
-        if len > 0 {
-            info!("Found {len} reposts: {reposts:?}");
-        }
-
-        Ok(repost_message(msg, &reposts))
+    // if include_reply false len should always be 0
+    if reposts.len() > 0 {
+        info!("Found {} reposts: {reposts:?}", reposts.len());
+        Ok(Some(reposts))
     } else {
         Ok(None)
     }

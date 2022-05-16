@@ -1,6 +1,8 @@
 use crate::errors::Result;
 
+use serenity::builder::ParseValue;
 use serenity::model;
+use serenity::model::channel::MessageReference;
 use serenity::prelude::Context;
 
 #[derive(Debug)]
@@ -13,6 +15,7 @@ pub enum ReplyContents {
 pub enum ReplyType<'a> {
     Message(&'a model::channel::Message),
     Channel(model::id::ChannelId),
+    MessageId(model::id::MessageId, model::id::ChannelId),
 }
 
 #[derive(Debug)]
@@ -48,6 +51,24 @@ impl Reply<'_> {
             }
             ReplyType::Channel(channel) => {
                 channel.say(ctx, resp).await?;
+            }
+            ReplyType::MessageId(msg_id, channel_id) => {
+                // The following code is essentially entirely copied from serenity (the library being used)
+                // codebase directly. It is licensed under ISC, I think it is fine to use it here. They
+                // own the copyright, etc.alloc
+                channel_id
+                    .send_message(ctx, |builder| {
+                        builder
+                            .reference_message(MessageReference::from((*channel_id, *msg_id)))
+                            .allowed_mentions(|f| {
+                                f.replied_user(false)
+                                    .parse(ParseValue::Everyone)
+                                    .parse(ParseValue::Users)
+                                    .parse(ParseValue::Roles)
+                            });
+                        builder.content(resp)
+                    })
+                    .await?;
             }
         }
 

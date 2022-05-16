@@ -450,9 +450,13 @@ impl DB {
         Ok(links)
     }
 
-    pub fn hash_matches(&self, hash: &str, server: u64) -> Result<Vec<(Message, String)>> {
+    pub fn hash_matches(
+        &self,
+        hash: &str,
+        server: u64,
+        current_msg_id: u64,
+    ) -> Result<Vec<(Message, String)>> {
         let conn = self.conn.borrow();
-        let mut chars = hash.chars();
 
         let mut stmt = conn.prepare(
             "SELECT M.id, M.server, M.channel, M.author, M.created_at, 
@@ -472,10 +476,11 @@ impl DB {
                 ( I.c5 = (?5) AND I.c1 = (?1) AND I.c2 = (?2) AND I.c3 = (?3) )
             )
             AND S.id = (?7)
+            AND M.id != (?8)
             AND C.visible = TRUE
             AND M.deleted IS NULL",
         )?;
-
+        let mut chars = hash.chars();
         let rows = stmt.query_map(
             params![
                 String::from(chars.next().unwrap()),
@@ -484,7 +489,8 @@ impl DB {
                 String::from(chars.nth(3).unwrap()),
                 String::from(chars.nth(4).unwrap()),
                 hash,
-                server
+                server,
+                current_msg_id
             ],
             |row: &Row<'_>| -> rusqlite::Result<(Message, String)> {
                 Ok((

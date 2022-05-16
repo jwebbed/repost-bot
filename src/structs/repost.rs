@@ -1,9 +1,11 @@
 use crate::structs::reply::{Reply, ReplyType};
 use crate::structs::Message;
 
+use chrono::{DateTime, Utc};
 use humantime::format_duration;
-use log::error;
-use std::collections::HashSet;
+use log::{error, warn};
+use serenity::model;
+use std::collections::{HashMap, HashSet};
 use std::vec::Vec;
 
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
@@ -12,98 +14,147 @@ pub enum RepostType {
     Image,
 }
 
-#[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
-struct Repost {
-    repost_type: RepostType,
-    message: Message,
-}
-
+#[derive(Debug)]
 pub struct RepostSet {
-    reposts: HashSet<Repost>,
+    reposts: HashMap<Message, HashSet<RepostType>>,
+    types: HashSet<RepostType>,
 }
 
-#[allow(dead_code, unused_must_use)]
 impl RepostSet {
     pub fn new() -> RepostSet {
         RepostSet {
-            reposts: HashSet::new(),
+            reposts: HashMap::new(),
+            types: HashSet::new(),
         }
     }
 
-    pub fn add(&mut self, repost_type: RepostType, message: Message) {
-        self.reposts.insert(Repost {
-            repost_type,
-            message,
-        });
+    pub fn add(&mut self, msg: Message, repost_type: RepostType) {
+        self.reposts
+            .entry(msg)
+            .or_insert(HashSet::new())
+            .insert(repost_type);
+        self.types.insert(repost_type);
     }
 
     pub fn union(&mut self, other: &RepostSet) {
-        self.reposts.union(&other.reposts);
+        // Should clean this up, can probably do it with some clever maps
+        for (msg, repost_types) in &other.reposts {
+            for repost_type in repost_types {
+                self.add(*msg, *repost_type);
+            }
+        }
     }
 
     pub fn len(&self) -> usize {
         self.reposts.len()
     }
 
+    pub fn generate_reply_for_message_id<'a>(
+        &self,
+        msg_id: &'a model::id::MessageId,
+        channel_id: &'a model::id::ChannelId,
+        msg_created_at: DateTime<Utc>,
+    ) -> Option<Reply<'a>> {
+        self.generate_reply(msg_created_at)
+            .map(|x| Reply::new(x, ReplyType::MessageId(*msg_id, *channel_id)))
+    }
+
     pub fn generate_reply_for_message<'a>(
         &self,
         msg: &'a serenity::model::prelude::Message,
     ) -> Option<Reply<'a>> {
-        if !self.reposts.is_empty() {
-            let response = if self.reposts.len() > 1 {
-                // need to do something more advanced here to account for multiple types of reposts
-                let mut to_process = Vec::from_iter(self.reposts.clone());
-                to_process.sort_by(|a, b| a.message.created_at.cmp(&b.message.created_at));
+        self.generate_reply(*msg.id.created_at())
+            .map(|x| Reply::new(x, ReplyType::Message(msg)))
+    }
 
-                Some(format!(
-                    "🚨 REPOST 🚨\n{}",
-                    to_process
-                        .iter()
-                        .map(|x| repost_text(&x.message, msg))
-                        .collect::<Vec<String>>()
-                        .join("\n")
-                ))
-            } else {
-                if let Some(repost) = self.reposts.iter().next() {
-                    let prefix = match repost.repost_type {
-                        RepostType::Link => "LINK",
-                        RepostType::Image => "IMAGE",
-                    };
-                    let link_text = repost_text(&repost.message, msg);
+    fn generate_reply(&self, reply_to_created_at: DateTime<Utc>) -> Option<String> {
+        warn!("generating reply for {self:?}");
+        if self.reposts.len() > 1 {
+            let mut msgs_mut: Vec<Message> = self.reposts.clone().into_keys().collect();
+            msgs_mut.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+            let msgs = msgs_mut;
 
-                    Some(format!("🚨 {prefix} 🚨 REPOST 🚨 {link_text}"))
-                } else {
+            let lines = msgs
+                .iter()
+                .map(|x| {
+                    let text = repost_text(&x, reply_to_created_at);
+                    if self.types.len() > 1 {
+                        // should never panic since this is literally just an iter of the sorted keys
+                        let thing = self.reposts.get(&x).unwrap();
+                        format!("{} {text}", prefix_text(thing, false))
+                    } else {
+                        text
+                    }
+                })
+                .collect::<Vec<String>>()
+                .join("\n");
+
+            let header_prefix = format!("{} 🚨 ", prefix_text(&self.types, true));
+            Some(format!("🚨 {}REPOST 🚨\n{}", header_prefix, lines))
+        } else if self.reposts.len() == 1 {
+            self.reposts.iter().next().map_or_else(
+                || {
                     // in principle this code path should be impossible since we've already checked the length
                     error!(
                         "RepostSet had 1 element but got None when extracting it {:?}",
                         self.reposts
                     );
                     None
-                }
-            };
-
-            response.map(|x| Reply::new(x, ReplyType::Message(msg)))
+                },
+                |(msg, rtypes)| {
+                    let prefix = prefix_text(&rtypes, true);
+                    let link_text = repost_text(&msg, reply_to_created_at);
+                    Some(format!("🚨 {prefix} 🚨 REPOST 🚨 {link_text}"))
+                },
+            )
         } else {
             None
         }
     }
 }
 
-fn repost_text(
-    repost_message: &Message,
-    response_msg: &serenity::model::prelude::Message,
-) -> String {
-    /*  let duration_text = match {
-        Some(duration) => format_duration(duration).to_string(),
-        None => "".to_string(),
-    };*/
+impl RepostType {
+    const fn text_long(&self) -> &str {
+        match self {
+            RepostType::Link => "LINK",
+            RepostType::Image => "IMAGE",
+        }
+    }
 
+    const fn text_short(&self) -> &str {
+        match self {
+            RepostType::Link => "🔗",
+            RepostType::Image => "🖼️",
+        }
+    }
+}
+
+fn prefix_text(repost_types: &HashSet<RepostType>, long_text: bool) -> String {
+    let mut labels: Vec<&str> = repost_types
+        .iter()
+        .map(|t| {
+            if long_text {
+                t.text_long()
+            } else {
+                t.text_short()
+            }
+        })
+        .collect();
+    labels.sort();
+    if long_text {
+        labels.join("/")
+    } else {
+        labels.join("")
+    }
+}
+
+fn repost_text(original_message: &Message, reply_to_created_at: DateTime<Utc>) -> String {
     format!(
         "{} {}",
-        repost_message
-            .get_duration(*response_msg.id.created_at())
+        original_message
+            .get_duration(reply_to_created_at)
             .map_or("".to_string(), |duration| format_duration(duration)
                 .to_string()),
-        repost_message.uri()
+        original_message.uri()
     )
 }

@@ -1,12 +1,12 @@
-use crate::errors::Result;
-use crate::structs::reply::Reply;
+use crate::errors::{Error, Result};
 use crate::structs::repost::{RepostSet, RepostType};
 use crate::DB;
 
 use image::io::Reader;
 use img_hash::{HashAlg, HasherConfig, ImageHash};
-use log::{info, warn};
+use log::{debug, info, warn};
 use phf::phf_set;
+use serenity::model::channel::{Attachment, Embed};
 use serenity::model::prelude::Message;
 use std::io::Cursor;
 use std::time::Instant;
@@ -41,13 +41,64 @@ async fn download_and_hash(url: &str, proxy_url: Option<&String>) -> Result<Opti
     }
 }
 
-pub async fn store_images(msg: &Message, include_reply: bool) -> Result<Option<Reply<'_>>> {
-    let msg_id = *msg.id.as_u64();
-    let mut hashes = Vec::new();
-    if !msg.attachments.is_empty() {
-        info!("msg {msg_id} has {} attachments", msg.attachments.len());
+#[derive(Debug)]
+pub struct ImageProcesser<'a> {
+    msg_id: u64,
+    server_id: u64,
+    attachments: &'a Vec<Attachment>,
+    embeds: &'a Vec<Embed>,
+}
+
+impl<'a> ImageProcesser<'a> {
+    pub const fn new(
+        msg_id: u64,
+        server_id: u64,
+        attachments: &'a Vec<Attachment>,
+        embeds: &'a Vec<Embed>,
+    ) -> ImageProcesser<'a> {
+        ImageProcesser {
+            msg_id,
+            server_id,
+            attachments,
+            embeds,
+        }
     }
-    for attachment in &msg.attachments {
+}
+
+impl ImageProcesser<'_> {
+    pub fn from_message(msg: &Message) -> Result<ImageProcesser<'_>> {
+        Ok(ImageProcesser::new(
+            *msg.id.as_u64(),
+            *msg.guild_id.ok_or(Error::ConstStr("idk"))?.as_u64(),
+            &msg.attachments,
+            &msg.embeds,
+        ))
+    }
+
+    pub async fn process(&self, include_reply: bool) -> Result<Option<RepostSet>> {
+        store_images_direct(
+            self.msg_id,
+            self.server_id,
+            self.attachments,
+            self.embeds,
+            include_reply,
+        )
+        .await
+    }
+}
+
+async fn store_images_direct<'a>(
+    msg_id: u64,
+    server_id: u64,
+    attachments: &'a Vec<Attachment>,
+    embeds: &'a Vec<Embed>,
+    include_reply: bool,
+) -> Result<Option<RepostSet>> {
+    let mut hashes = Vec::new();
+    if !attachments.is_empty() {
+        info!("msg {msg_id} has {} attachments", attachments.len());
+    }
+    for attachment in attachments {
         if attachment
             .content_type
             .as_ref()
@@ -74,10 +125,10 @@ pub async fn store_images(msg: &Message, include_reply: bool) -> Result<Option<R
         hashes.push((hash, &attachment.url));
     }
 
-    if !msg.embeds.is_empty() {
-        info!("msg {msg_id} has {} embeds", msg.embeds.len());
+    if !embeds.is_empty() {
+        info!("msg {msg_id} has {} embeds", embeds.len());
     }
-    for embed in &msg.embeds {
+    for embed in embeds {
         if let Some(provider) = &embed.provider {
             if let Some(provider_name) = &provider.name {
                 if IGNORED_PROVIDERS.contains(provider_name) {
@@ -89,12 +140,12 @@ pub async fn store_images(msg: &Message, include_reply: bool) -> Result<Option<R
         }
 
         if let Some(embedi) = &embed.image {
-            info!("msg {msg_id} found image embed in msg {msg:?}");
+            info!("msg {msg_id} found image embed");
             if let Some(hash) = download_and_hash(&embedi.url, embedi.proxy_url.as_ref()).await? {
                 hashes.push((hash, &embedi.url));
             }
         } else if let Some(embedi) = &embed.thumbnail {
-            info!("msg {msg_id} found thumbnail embed in msg {msg:?}");
+            info!("msg {msg_id} found thumbnail embed");
             if let Some(hash) = download_and_hash(&embedi.url, embedi.proxy_url.as_ref()).await? {
                 hashes.push((hash, &embedi.url));
             }
@@ -105,7 +156,7 @@ pub async fn store_images(msg: &Message, include_reply: bool) -> Result<Option<R
     for (hash, url) in hashes {
         if include_reply {
             let b64 = hash.to_base64();
-            let matches = db.hash_matches(&b64, *msg.guild_id.unwrap().as_u64())?;
+            let matches = db.hash_matches(&b64, server_id, msg_id)?;
             info!(
                 "for {msg_id} with has {b64} found {} matches",
                 matches.len()
@@ -116,16 +167,15 @@ pub async fn store_images(msg: &Message, include_reply: bool) -> Result<Option<R
                     let distance = hash.dist(&db_hash);
                     info!("Hamming Distance for db_hash {db_hash_b64} is {distance}");
                     if distance < 5 {
-                        reposts.add(RepostType::Image, *db_msg);
+                        reposts.add(*db_msg, RepostType::Image);
                     }
                 }
             }
         }
         DB::db_call(|db| db.insert_image(url, &hash.to_base64(), msg_id))?;
     }
-
     if reposts.len() > 0 {
-        Ok(reposts.generate_reply_for_message(msg))
+        Ok(Some(reposts))
     } else {
         Ok(None)
     }

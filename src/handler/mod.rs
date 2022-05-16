@@ -7,6 +7,8 @@ use crate::db::DB;
 use crate::errors::{Error, Result};
 use crate::structs;
 use crate::structs::reply::Reply;
+use crate::structs::repost::RepostSet;
+use images::ImageProcesser;
 
 use log::{debug, error, info, trace, warn};
 
@@ -20,9 +22,11 @@ use serenity::{
         guild::Member,
         id::{ChannelId, GuildId, MessageId},
         permissions::Permissions,
+        prelude::MessageUpdateEvent,
     },
     prelude::*,
 };
+
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::time::Instant;
@@ -89,12 +93,73 @@ async fn process_discord_message(ctx: &Context, msg: &Message) -> Result<structs
 
     let ret = db.add_message(msg.id, channel_id, server_id, author_id);
 
-    debug!(
+    trace!(
         "process_discord_message time elapsed: {:.2?}",
         now.elapsed()
     );
 
     ret
+}
+
+async fn process_message_update<'a>(
+    _ctx: &Context,
+    _old_if_available: &Option<Message>,
+    _new: &Option<Message>,
+    event: &'a MessageUpdateEvent,
+) -> Result<Option<Reply<'a>>> {
+    let msg_id = *event.id.as_u64();
+    if event.guild_id.is_none() {
+        warn!("Received message update on msg_id {msg_id} with no guild_id, can't process");
+        return Ok(None);
+    }
+    let db_msg_maybe = DB::db_call(|db| db.get_message(event.id))?;
+    if db_msg_maybe.is_none() {
+        warn!("Received message update on msg_id {msg_id} but haven't already processed message, can't process");
+        return Ok(None);
+    }
+    // TODO: no more unwraps
+    let db_msg = db_msg_maybe.unwrap();
+    // just handling embeds right now as it's a common occurance that the embed
+    // only gets loaded after the message is first sent. As such, if we don't
+    // handle it, embeds will get routinely missed.
+    //
+    // We should eventually use this to check if existing images / links are
+    // removed and if attachments / links are added.
+    if event.embeds.is_some() || event.attachments.is_some() {
+        // we should reply if the message is recent, if it's an older message
+        // being updated we'll leave it be
+        let should_reply = db_msg.is_recent();
+        let attachments_default = vec![];
+        let attachments = match &event.attachments {
+            Some(r) => r,
+            None => &attachments_default,
+        };
+        let embeds_default = vec![];
+        let embeds = match &event.embeds {
+            Some(r) => r,
+            None => &embeds_default,
+        };
+
+        let reposts = ImageProcesser::new(
+            msg_id,
+            *event.guild_id.unwrap().as_u64(),
+            &attachments,
+            &embeds,
+        )
+        .process(should_reply)
+        .await?;
+        if should_reply {
+            return reposts.map_or(Ok(None), |reposts| {
+                Ok(reposts.generate_reply_for_message_id(
+                    &event.id,
+                    &event.channel_id,
+                    db_msg.created_at,
+                ))
+            });
+        }
+    }
+
+    Ok(None)
 }
 
 async fn process_message<'a>(
@@ -115,27 +180,21 @@ async fn process_message<'a>(
         if !db_msg.is_wordle_parsed() {
             wordle::check_wordle(msg);
         }
-
-        let image_response = if !db_msg.is_embed_parsed() {
-            images::store_images(msg, new).await?
-        } else {
-            None
+        let mut repost_set = RepostSet::new();
+        if !db_msg.is_embed_parsed() {
+            let processor = ImageProcesser::from_message(&msg)?;
+            if let Some(reposts) = processor.process(new).await? {
+                repost_set.union(&reposts);
+            };
         };
 
-        // return the reply option from parsing reposts
-        let response = if !db_msg.is_repost_parsed() {
-            links::store_links_and_get_reposts(msg, new)?
-        } else {
-            None
+        if !db_msg.is_repost_parsed() {
+            if let Some(reposts) = links::store_links_and_get_reposts(msg, new)? {
+                repost_set.union(&reposts);
+            }
         };
 
-        if response.is_some() {
-            response
-        } else if image_response.is_some() {
-            image_response
-        } else {
-            None
-        }
+        repost_set.generate_reply_for_message(msg)
     };
 
     DB::db_call(|db| db.mark_message_all_checked(msg.id))?;
@@ -250,15 +309,35 @@ impl EventHandler for Handler {
             Ok(result) => {
                 if let Some(reply) = result {
                     if let Err(why) = reply.send(&ctx).await {
-                        error!("failed to send reply {why:?}");
+                        error!("message: failed to send reply {why:?}");
                     }
                 }
 
                 if let Err(why) = process_discord_message_slow(&ctx, &msg).await {
-                    error!("failed process discord messages slow with error: {why:?}");
+                    error!("message: failed process discord messages slow with error: {why:?}");
                 }
             }
-            Err(why) => error!("failed to process messsage: {why:?}"),
+            Err(why) => error!("message: failed to process messsage: {why:?}"),
+        }
+    }
+
+    async fn message_update(
+        &self,
+        ctx: Context,
+        old_if_available: Option<Message>,
+        new: Option<Message>,
+        event: MessageUpdateEvent,
+    ) {
+        info!("received message update on {new:?} (old: {old_if_available:?}) w/ event {event:?}");
+        match process_message_update(&ctx, &old_if_available, &new, &event).await {
+            Ok(result) => {
+                if let Some(reply) = result {
+                    if let Err(why) = reply.send(&ctx).await {
+                        error!("message_update: failed to send reply {why:?}");
+                    }
+                }
+            }
+            Err(why) => error!("message_update: failed to process messsage: {why:?}"),
         }
     }
 

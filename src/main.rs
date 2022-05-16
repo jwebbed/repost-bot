@@ -36,7 +36,7 @@ fn migrate_db() {
 async fn main() {
     SimpleLogger::new()
         .with_level(LevelFilter::Warn)
-        .with_module_level("repost_bot", LevelFilter::Trace)
+        .with_module_level("repost_bot", LevelFilter::Debug)
         // EST offset, will be incorrect if it runs over DST
         // Could we please abolish DST
         .with_utc_offset(UtcOffset::from_hms(-4, 0, 0).unwrap())
