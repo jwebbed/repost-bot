@@ -3,18 +3,18 @@ mod filter;
 use filter::filtered_url;
 
 use crate::db::DB;
-use crate::errors::{Error, Result};
-use crate::structs::reply::{Reply, ReplyType};
+use crate::errors::{Result};
+
 use crate::structs::repost::{RepostSet, RepostType};
 use crate::structs::Link;
 
-use humantime::format_duration;
+
 use lazy_static::lazy_static;
 use linkify::{LinkFinder, LinkKind};
 use log::{error, info};
 use regex::Regex;
 use serenity::model::channel::Message;
-use std::time::Duration;
+
 
 fn query_link_matches(url_str: &str, server: u64) -> Result<Vec<Link>> {
     let mut links = Vec::new();

@@ -24,6 +24,7 @@ pub struct Message {
 }
 
 impl Message {
+    #[allow(clippy::too_many_arguments)]
     pub const fn new(
         id: u64,
         server: u64,

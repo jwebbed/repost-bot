@@ -4,7 +4,7 @@ use crate::DB;
 
 use image::io::Reader;
 use img_hash::{HashAlg, HasherConfig, ImageHash};
-use log::{debug, info, warn};
+use log::{info, warn};
 use phf::phf_set;
 use serenity::model::channel::{Attachment, Embed};
 use serenity::model::prelude::Message;

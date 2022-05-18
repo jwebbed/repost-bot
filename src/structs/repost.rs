@@ -31,7 +31,7 @@ impl RepostSet {
     pub fn add(&mut self, msg: Message, repost_type: RepostType) {
         self.reposts
             .entry(msg)
-            .or_insert(HashSet::new())
+            .or_insert_with(HashSet::new)
             .insert(repost_type);
         self.types.insert(repost_type);
     }
@@ -77,10 +77,10 @@ impl RepostSet {
             let lines = msgs
                 .iter()
                 .map(|x| {
-                    let text = repost_text(&x, reply_to_created_at);
+                    let text = repost_text(x, reply_to_created_at);
                     if self.types.len() > 1 {
                         // should never panic since this is literally just an iter of the sorted keys
-                        let thing = self.reposts.get(&x).unwrap();
+                        let thing = self.reposts.get(x).unwrap();
                         format!("{} {text}", prefix_text(thing, false))
                     } else {
                         text
@@ -102,8 +102,8 @@ impl RepostSet {
                     None
                 },
                 |(msg, rtypes)| {
-                    let prefix = prefix_text(&rtypes, true);
-                    let link_text = repost_text(&msg, reply_to_created_at);
+                    let prefix = prefix_text(rtypes, true);
+                    let link_text = repost_text(msg, reply_to_created_at);
                     Some(format!("🚨 {prefix} 🚨 REPOST 🚨 {link_text}"))
                 },
             )
@@ -140,7 +140,7 @@ fn prefix_text(repost_types: &HashSet<RepostType>, long_text: bool) -> String {
             }
         })
         .collect();
-    labels.sort();
+    labels.sort_unstable();
     if long_text {
         labels.join("/")
     } else {

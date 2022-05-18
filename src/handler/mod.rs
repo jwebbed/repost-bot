@@ -143,8 +143,8 @@ async fn process_message_update<'a>(
         let reposts = ImageProcesser::new(
             msg_id,
             *event.guild_id.unwrap().as_u64(),
-            &attachments,
-            &embeds,
+            attachments,
+            embeds,
         )
         .process(should_reply)
         .await?;
@@ -182,7 +182,7 @@ async fn process_message<'a>(
         }
         let mut repost_set = RepostSet::new();
         if !db_msg.is_embed_parsed() {
-            let processor = ImageProcesser::from_message(&msg)?;
+            let processor = ImageProcesser::from_message(msg)?;
             if let Some(reposts) = processor.process(new).await? {
                 repost_set.union(&reposts);
             };
