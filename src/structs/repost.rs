@@ -158,3 +158,197 @@ fn repost_text(original_message: &Message, reply_to_created_at: DateTime<Utc>) -
         original_message.uri()
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::prelude::*;
+
+    const fn get_message(id: u64, server: u64, channel: u64, created_at: DateTime<Utc>) -> Message {
+        Message::new(
+            id, server, channel, None, created_at, None, None, None, None, None,
+        )
+    }
+
+    fn get_datetime(h: u32, m: u32, s: u32) -> DateTime<Utc> {
+        Utc.ymd(2022, 5, 1).and_hms(h, m, s)
+    }
+
+    #[test]
+    fn test_set_union_overlap() {
+        let msg = get_message(1, 1, 1, get_datetime(1, 0, 0));
+        let mut set1 = RepostSet::new();
+        let mut set2 = RepostSet::new();
+        set1.add(msg, RepostType::Image);
+        set2.add(msg, RepostType::Image);
+
+        set1.union(&set2);
+        assert_eq!(set1.len(), 1);
+    }
+
+    #[test]
+    fn test_set_union_no_overlap() {
+        let mut set1 = RepostSet::new();
+        let mut set2 = RepostSet::new();
+        set1.add(
+            get_message(1, 1, 1, get_datetime(1, 0, 0)),
+            RepostType::Image,
+        );
+        set2.add(
+            get_message(2, 1, 1, get_datetime(1, 0, 1)),
+            RepostType::Link,
+        );
+
+        set1.union(&set2);
+        assert_eq!(set1.len(), 2);
+    }
+
+    #[test]
+    fn test_single_image_repost() {
+        let mut set = RepostSet::new();
+        set.add(
+            get_message(1, 1, 1, get_datetime(1, 0, 0)),
+            RepostType::Image,
+        );
+
+        let reply_str = set.generate_reply(get_datetime(2, 0, 0));
+        assert_eq!(
+            Some("🚨 IMAGE 🚨 REPOST 🚨 1h https://discord.com/channels/1/1/1".to_string()),
+            reply_str
+        );
+    }
+
+    #[test]
+    fn test_single_link_repost() {
+        let mut set = RepostSet::new();
+        set.add(
+            get_message(1, 1, 1, get_datetime(1, 0, 0)),
+            RepostType::Link,
+        );
+
+        let reply_str = set.generate_reply(get_datetime(2, 0, 0));
+        assert_eq!(
+            Some("🚨 LINK 🚨 REPOST 🚨 1h https://discord.com/channels/1/1/1".to_string()),
+            reply_str
+        );
+    }
+
+    #[test]
+    fn test_multi_image_repost() {
+        let mut set = RepostSet::new();
+        set.add(
+            get_message(1, 1, 1, get_datetime(1, 0, 0)),
+            RepostType::Image,
+        );
+
+        set.add(
+            get_message(2, 1, 1, get_datetime(2, 0, 0)),
+            RepostType::Image,
+        );
+
+        let reply_str = set.generate_reply(Utc.ymd(2022, 5, 1).and_hms(3, 0, 0));
+        assert_eq!(
+            Some(
+                "🚨 IMAGE 🚨 REPOST 🚨\n\
+            2h https://discord.com/channels/1/1/1\n\
+            1h https://discord.com/channels/1/1/2"
+                    .to_string()
+            ),
+            reply_str
+        );
+    }
+
+    #[test]
+    fn test_multi_link_repost() {
+        let mut set = RepostSet::new();
+        set.add(
+            get_message(1, 1, 1, get_datetime(1, 0, 0)),
+            RepostType::Link,
+        );
+
+        set.add(
+            get_message(2, 1, 1, get_datetime(2, 0, 0)),
+            RepostType::Link,
+        );
+
+        let reply_str = set.generate_reply(Utc.ymd(2022, 5, 1).and_hms(3, 0, 0));
+        assert_eq!(
+            Some(
+                "🚨 LINK 🚨 REPOST 🚨\n\
+            2h https://discord.com/channels/1/1/1\n\
+            1h https://discord.com/channels/1/1/2"
+                    .to_string()
+            ),
+            reply_str
+        );
+    }
+
+    #[test]
+    fn test_multi_image_link_reposts_seperate() {
+        let mut set = RepostSet::new();
+        set.add(
+            get_message(1, 1, 1, get_datetime(1, 0, 0)),
+            RepostType::Image,
+        );
+
+        set.add(
+            get_message(2, 1, 1, get_datetime(2, 0, 0)),
+            RepostType::Link,
+        );
+
+        let reply_str = set.generate_reply(Utc.ymd(2022, 5, 1).and_hms(3, 0, 0));
+        assert_eq!(
+            Some(
+                "🚨 IMAGE/LINK 🚨 REPOST 🚨\n\
+            🖼️ 2h https://discord.com/channels/1/1/1\n\
+            🔗 1h https://discord.com/channels/1/1/2"
+                    .to_string()
+            ),
+            reply_str
+        );
+    }
+
+    #[test]
+    fn test_multi_image_link_reposts_overlap() {
+        let mut set = RepostSet::new();
+        set.add(
+            get_message(1, 1, 1, get_datetime(1, 0, 0)),
+            RepostType::Image,
+        );
+
+        set.add(
+            get_message(2, 1, 1, get_datetime(2, 0, 0)),
+            RepostType::Link,
+        );
+
+        set.add(
+            get_message(2, 1, 1, get_datetime(2, 0, 0)),
+            RepostType::Image,
+        );
+
+        let reply_str = set.generate_reply(Utc.ymd(2022, 5, 1).and_hms(3, 0, 0));
+        assert_eq!(
+            Some(
+                "🚨 IMAGE/LINK 🚨 REPOST 🚨\n\
+            🖼️ 2h https://discord.com/channels/1/1/1\n\
+            🔗🖼️ 1h https://discord.com/channels/1/1/2"
+                    .to_string()
+            ),
+            reply_str
+        );
+    }
+
+    #[test]
+    fn test_single_repost_image_link() {
+        let mut set = RepostSet::new();
+        let msg = get_message(1, 1, 1, get_datetime(1, 0, 0));
+        set.add(msg, RepostType::Link);
+        set.add(msg, RepostType::Image);
+
+        let reply_str = set.generate_reply(Utc.ymd(2022, 5, 1).and_hms(2, 0, 0));
+        assert_eq!(
+            Some("🚨 IMAGE/LINK 🚨 REPOST 🚨 1h https://discord.com/channels/1/1/1".to_string()),
+            reply_str
+        );
+    }
+}

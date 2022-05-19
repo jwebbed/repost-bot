@@ -301,7 +301,7 @@ mod tests {
     fn test_message_table() -> Result<()> {
         let table = get_table_info("message")?;
 
-        assert_eq!(table.rows.len(), 9);
+        assert_eq!(table.rows.len(), 10);
         table.assert_row("id", "INTEGER", 0, None, 1);
         table.assert_row("server", "INTEGER", 0, None, 0);
         table.assert_row("channel", "INTEGER", 0, None, 0);
@@ -311,6 +311,7 @@ mod tests {
         table.assert_row("parsed_wordle", "NUMERIC", 0, Some("NULL"), 0);
         table.assert_row("deleted", "NUMERIC", 0, Some("NULL"), 0);
         table.assert_row("checked_old", "NUMERIC", 0, Some("NULL"), 0);
+        table.assert_row("parsed_embed", "NUMERIC", 0, Some("NULL"), 0);
         Ok(())
     }
 
