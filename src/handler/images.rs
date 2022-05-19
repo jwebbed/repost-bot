@@ -2,6 +2,7 @@ use crate::errors::{Error, Result};
 use crate::structs::repost::{RepostSet, RepostType};
 use crate::DB;
 
+use image::error::ImageError;
 use image::io::Reader;
 use img_hash::{HashAlg, HasherConfig, ImageHash};
 use log::{info, warn};
@@ -16,15 +17,24 @@ static IGNORED_PROVIDERS: phf::Set<&'static str> = phf_set! {
     "YouTube",
 };
 
-fn get_image_hash(bytes: &Vec<u8>) -> Result<ImageHash> {
+fn get_image_hash(bytes: &Vec<u8>) -> Result<Option<ImageHash>> {
     let image = Reader::new(Cursor::new(bytes))
         .with_guessed_format()?
-        .decode()?;
-    Ok(HasherConfig::new()
-        .hash_alg(HashAlg::Gradient)
-        .hash_size(16, 16)
-        .to_hasher()
-        .hash_image(&image))
+        .decode();
+    // decoding error we likely can't do anything about, should just log and ignore
+    if let Err(err) = &image {
+        if let ImageError::Decoding(_) = err {
+            warn!("decoding error occured, skipping {err:?}");
+            return Ok(None);
+        }
+    }
+    Ok(Some(
+        HasherConfig::new()
+            .hash_alg(HashAlg::Gradient)
+            .hash_size(16, 16)
+            .to_hasher()
+            .hash_image(&image?),
+    ))
 }
 
 async fn download_and_hash(url: &str, proxy_url: Option<&String>) -> Result<Option<ImageHash>> {
@@ -34,7 +44,7 @@ async fn download_and_hash(url: &str, proxy_url: Option<&String>) -> Result<Opti
     };
     let bytes = reqwest::get(req_url).await?.bytes().await?.to_vec();
     if !bytes.is_empty() {
-        Ok(Some(get_image_hash(&bytes)?))
+        Ok(get_image_hash(&bytes)?)
     } else {
         info!("received url with 0 bytes, can't process");
         Ok(None)
@@ -115,14 +125,14 @@ async fn store_images_direct<'a>(
             download_time.elapsed()
         );
         let parse_time = Instant::now();
-        let hash = get_image_hash(&bytes)?;
-        warn!(
-            "msg {msg_id} has attachment with hash {} parsed in {:.2?}",
-            hash.to_base64(),
-            parse_time.elapsed()
-        );
-
-        hashes.push((hash, &attachment.url));
+        if let Some(hash) = get_image_hash(&bytes)? {
+            warn!(
+                "msg {msg_id} has attachment with hash {} parsed in {:.2?}",
+                hash.to_base64(),
+                parse_time.elapsed()
+            );
+            hashes.push((hash, &attachment.url));
+        }
     }
 
     if !embeds.is_empty() {

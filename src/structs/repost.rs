@@ -3,7 +3,7 @@ use crate::structs::Message;
 
 use chrono::{DateTime, Utc};
 use humantime::format_duration;
-use log::{error, warn};
+use log::{error, info, warn};
 use serenity::model;
 use std::collections::{HashMap, HashSet};
 use std::vec::Vec;
@@ -68,7 +68,9 @@ impl RepostSet {
     }
 
     fn generate_reply(&self, reply_to_created_at: DateTime<Utc>) -> Option<String> {
-        warn!("generating reply for {self:?}");
+        if self.reposts.len() > 0 {
+            info!("generating reply for {self:?}");
+        }
         if self.reposts.len() > 1 {
             let mut msgs_mut: Vec<Message> = self.reposts.clone().into_keys().collect();
             msgs_mut.sort_by(|a, b| a.created_at.cmp(&b.created_at));
