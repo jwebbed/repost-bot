@@ -1,12 +1,12 @@
 use crate::db::DB;
 use crate::errors::{Error, Result};
 
+use log::info;
 use serde_json::json;
 use serenity::builder::ParseValue;
 use serenity::model;
 use serenity::model::channel::MessageReference;
 use serenity::prelude::Context;
-use std::collections::HashMap;
 
 #[derive(Debug)]
 pub enum ReplyContents {
@@ -61,9 +61,7 @@ impl Reply<'_> {
             }
             ReplyType::Message(msg) => {
                 if let Some(db_reply) = DB::db_call(|db| db.get_reply(*msg.id.as_u64()))? {
-                    ctx.http
-                        .edit_message(db_reply.channel, db_reply.id, &json!({ "content": resp }))
-                        .await?;
+                    edit_reply(ctx, &db_reply, &resp).await?;
                 } else {
                     let reply = msg.reply(ctx, resp).await?;
                     self.store_reply(reply.id)?;
@@ -71,9 +69,7 @@ impl Reply<'_> {
             }
             ReplyType::MessageId(msg_id, channel_id) => {
                 if let Some(db_reply) = DB::db_call(|db| db.get_reply(*msg_id.as_u64()))? {
-                    ctx.http
-                        .edit_message(db_reply.channel, db_reply.id, &json!({ "content": resp }))
-                        .await?;
+                    edit_reply(ctx, &db_reply, &resp).await?;
                 } else {
                     // The following code is essentially entirely copied from serenity (the library being used)
                     // codebase directly. It is licensed under ISC, I think it is fine to use it here. They
@@ -113,4 +109,16 @@ impl Reply<'_> {
         let db = DB::get_db()?;
         db.add_reply(*reply_id.as_u64(), channel_id, replied_to)
     }
+}
+
+async fn edit_reply(ctx: &Context, db_reply: &DbReply, content: &str) -> Result<()> {
+    info!("Editing reply w/ id {}", db_reply.id);
+    ctx.http
+        .edit_message(
+            db_reply.channel,
+            db_reply.id,
+            &json!({ "content": content }),
+        )
+        .await?;
+    Ok(())
 }
