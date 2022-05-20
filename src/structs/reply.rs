@@ -1,9 +1,12 @@
-use crate::errors::Result;
+use crate::db::DB;
+use crate::errors::{Error, Result};
 
+use serde_json::json;
 use serenity::builder::ParseValue;
 use serenity::model;
 use serenity::model::channel::MessageReference;
 use serenity::prelude::Context;
+use std::collections::HashMap;
 
 #[derive(Debug)]
 pub enum ReplyContents {
@@ -16,6 +19,13 @@ pub enum ReplyType<'a> {
     Message(&'a model::channel::Message),
     Channel(model::id::ChannelId),
     MessageId(model::id::MessageId, model::id::ChannelId),
+}
+
+#[derive(Debug)]
+pub struct DbReply {
+    pub id: u64,
+    pub channel: u64,
+    pub replied_to: u64,
 }
 
 #[derive(Debug)]
@@ -46,32 +56,61 @@ impl Reply<'_> {
         };
 
         match &self.place {
-            ReplyType::Message(msg) => {
-                msg.reply(ctx, resp).await?;
-            }
             ReplyType::Channel(channel) => {
                 channel.say(ctx, resp).await?;
             }
-            ReplyType::MessageId(msg_id, channel_id) => {
-                // The following code is essentially entirely copied from serenity (the library being used)
-                // codebase directly. It is licensed under ISC, I think it is fine to use it here. They
-                // own the copyright, etc.alloc
-                channel_id
-                    .send_message(ctx, |builder| {
-                        builder
-                            .reference_message(MessageReference::from((*channel_id, *msg_id)))
-                            .allowed_mentions(|f| {
-                                f.replied_user(false)
-                                    .parse(ParseValue::Everyone)
-                                    .parse(ParseValue::Users)
-                                    .parse(ParseValue::Roles)
-                            });
-                        builder.content(resp)
-                    })
-                    .await?;
+            ReplyType::Message(msg) => {
+                if let Some(db_reply) = DB::db_call(|db| db.get_reply(*msg.id.as_u64()))? {
+                    ctx.http
+                        .edit_message(db_reply.channel, db_reply.id, &json!({ "content": resp }))
+                        .await?;
+                } else {
+                    let reply = msg.reply(ctx, resp).await?;
+                    self.store_reply(reply.id)?;
+                }
             }
-        }
+            ReplyType::MessageId(msg_id, channel_id) => {
+                if let Some(db_reply) = DB::db_call(|db| db.get_reply(*msg_id.as_u64()))? {
+                    ctx.http
+                        .edit_message(db_reply.channel, db_reply.id, &json!({ "content": resp }))
+                        .await?;
+                } else {
+                    // The following code is essentially entirely copied from serenity (the library being used)
+                    // codebase directly. It is licensed under ISC, I think it is fine to use it here. They
+                    // own the copyright, etc.alloc
+                    let reply = channel_id
+                        .send_message(ctx, |builder| {
+                            builder
+                                .reference_message(MessageReference::from((*channel_id, *msg_id)))
+                                .allowed_mentions(|f| {
+                                    f.replied_user(false)
+                                        .parse(ParseValue::Everyone)
+                                        .parse(ParseValue::Users)
+                                        .parse(ParseValue::Roles)
+                                });
+                            builder.content(resp)
+                        })
+                        .await?;
+                    self.store_reply(reply.id)?;
+                }
+            }
+        };
 
         Ok(())
+    }
+
+    fn store_reply(&self, reply_id: model::id::MessageId) -> Result<()> {
+        let (replied_to, channel_id) = match &self.place {
+            ReplyType::Message(msg) => Ok((*msg.id.as_u64(), *msg.channel_id.as_u64())),
+            ReplyType::MessageId(msg_id, channel_id) => {
+                Ok((*msg_id.as_u64(), *channel_id.as_u64()))
+            }
+            _ => Err(Error::ConstStr(
+                "Can't store reply if not replying to a message",
+            )),
+        }?;
+
+        let db = DB::get_db()?;
+        db.add_reply(*reply_id.as_u64(), channel_id, replied_to)
     }
 }

@@ -3,11 +3,11 @@ mod queries;
 
 use crate::errors::{Error, Result};
 use crate::structs::wordle::{LetterStatus, Wordle, WordleBoard};
-use crate::structs::{Channel, Link, Message, RepostCount, ReposterCount};
+use crate::structs::{Channel, DbReply, Link, Message, RepostCount, ReposterCount};
 
 use log::{debug, info};
 use rusqlite::types::ToSql;
-use rusqlite::{params, Connection, Row};
+use rusqlite::{params, Connection, OptionalExtension, Row};
 use serenity::model::id::{ChannelId, GuildId, MessageId};
 use std::cell::RefCell;
 
@@ -670,6 +670,36 @@ impl DB {
         }
 
         Ok(wordles)
+    }
+
+    pub fn add_reply(&self, message_id: u64, channel_id: u64, replied_id: u64) -> Result<()> {
+        let conn = self.conn.borrow();
+        let mut stmt = conn.prepare(
+            "INSERT INTO reply (id, channel, replied_to) 
+            VALUES ( ?1, ?2, ?3 )
+            ON CONFLICT(id) DO NOTHING",
+        )?;
+
+        stmt.execute(params![message_id, channel_id, replied_id])?;
+        Ok(())
+    }
+
+    pub fn get_reply(&self, replied_id: u64) -> Result<Option<DbReply>> {
+        let conn = self.conn.borrow();
+        Ok(conn
+            .query_row(
+                "SELECT  id, channel, replied_to
+            FROM reply WHERE replied_to=(?1)",
+                [replied_id],
+                |row| {
+                    Ok(DbReply {
+                        id: row.get(0)?,
+                        channel: row.get(1)?,
+                        replied_to: row.get(2)?,
+                    })
+                },
+            )
+            .optional()?)
     }
 }
 

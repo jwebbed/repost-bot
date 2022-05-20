@@ -147,6 +147,18 @@ migration![
     "CREATE INDEX idx_image ON image (c1, c2, c3, c4, c5, hash);"
 ];
 
+migration![
+    9,
+    "CREATE TABLE reply (
+        id INTEGER PRIMARY KEY,
+        channel INTEGER NOT NULL,
+        replied_to INTEGER NOT NULL,
+        FOREIGN KEY(channel) REFERENCES channel(id) ON DELETE CASCADE,
+        FOREIGN KEY(replied_to) REFERENCES message(id) ON DELETE CASCADE
+    );",
+    "CREATE INDEX idx_reply ON reply (replied_to);"
+];
+
 fn delete_old_links(conn: &Connection) -> Result<()> {
     trace!("starting delete old links");
     conn.execute(
@@ -165,9 +177,9 @@ fn delete_old_links(conn: &Connection) -> Result<()> {
 }
 
 pub fn migrate(conn: &mut Connection) -> Result<()> {
-    // be sure to increment this everytime a new migration is added
-    const FINAL_VER: u32 = 8;
     const MIN_VER: u32 = 7;
+    // be sure to increment this everytime a new migration is added
+    const FINAL_VER: u32 = 9;
 
     let ver = queries::get_version(conn)?;
     info!("database version is currently: {ver} with target ver {FINAL_VER}");
@@ -190,6 +202,10 @@ pub fn migrate(conn: &mut Connection) -> Result<()> {
 
     if ver < 8 {
         migration_8(&tx)?;
+    }
+
+    if ver < 9 {
+        migration_9(&tx)?;
     }
     // delete old links we don't need
     delete_old_links(&tx)?;

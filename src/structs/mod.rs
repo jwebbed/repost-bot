@@ -7,6 +7,7 @@ pub mod wordle;
 pub use link::Channel;
 pub use link::Link;
 pub use message::Message;
+pub use reply::DbReply;
 
 #[derive(Debug, Default)]
 pub struct RepostCount {

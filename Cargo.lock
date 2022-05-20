@@ -1459,6 +1459,7 @@ dependencies = [
  "regex",
  "reqwest",
  "rusqlite",
+ "serde_json",
  "serenity",
  "simple_logger",
  "time 0.3.9",
