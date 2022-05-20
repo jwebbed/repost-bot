@@ -3,7 +3,7 @@ use crate::structs::Message;
 
 use chrono::{DateTime, Utc};
 use humantime::format_duration;
-use log::{error, info, warn};
+use log::{error, info};
 use serenity::model;
 use std::collections::{HashMap, HashSet};
 use std::vec::Vec;

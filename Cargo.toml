@@ -13,6 +13,12 @@ opt-level = 3
 [profile.dev]
 split-debuginfo = "unpacked"
 
+# Set image hashing library to opt 3 in dev as 
+# it is otherwise extremely slow
+[profile.dev.package]
+image = { opt-level = 3 } 
+img_hash = { opt-level = 3 } 
+
 [dependencies]
 chrono = "0.4"
 url = "2"
