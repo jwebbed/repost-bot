@@ -28,6 +28,16 @@ impl RepostSet {
         }
     }
 
+    pub fn new_from_messages(messages: &[Message], repost_type: RepostType) -> RepostSet {
+        RepostSet {
+            reposts: messages
+                .iter()
+                .map(|m| (*m, HashSet::from([repost_type])))
+                .collect(),
+            types: HashSet::from([repost_type]),
+        }
+    }
+
     pub fn add(&mut self, msg: Message, repost_type: RepostType) {
         self.reposts
             .entry(msg)
@@ -68,7 +78,7 @@ impl RepostSet {
     }
 
     fn generate_reply(&self, reply_to_created_at: DateTime<Utc>) -> Option<String> {
-        if self.reposts.len() > 0 {
+        if !self.reposts.is_empty() {
             info!("generating reply for {self:?}");
         }
         if self.reposts.len() > 1 {

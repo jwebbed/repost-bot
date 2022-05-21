@@ -61,7 +61,7 @@ impl Reply<'_> {
             }
             ReplyType::Message(msg) => {
                 if let Some(db_reply) = DB::db_call(|db| db.get_reply(*msg.id.as_u64()))? {
-                    edit_reply(ctx, &db_reply, &resp).await?;
+                    edit_reply(ctx, &db_reply, resp).await?;
                 } else {
                     let reply = msg.reply(ctx, resp).await?;
                     self.store_reply(reply.id)?;
@@ -69,7 +69,7 @@ impl Reply<'_> {
             }
             ReplyType::MessageId(msg_id, channel_id) => {
                 if let Some(db_reply) = DB::db_call(|db| db.get_reply(*msg_id.as_u64()))? {
-                    edit_reply(ctx, &db_reply, &resp).await?;
+                    edit_reply(ctx, &db_reply, resp).await?;
                 } else {
                     // The following code is essentially entirely copied from serenity (the library being used)
                     // codebase directly. It is licensed under ISC, I think it is fine to use it here. They

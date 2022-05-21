@@ -3,18 +3,16 @@ mod filter;
 use filter::filtered_url;
 
 use crate::db::DB;
-use crate::errors::{Result};
+use crate::errors::Result;
 
 use crate::structs::repost::{RepostSet, RepostType};
 use crate::structs::Link;
-
 
 use lazy_static::lazy_static;
 use linkify::{LinkFinder, LinkKind};
 use log::{error, info};
 use regex::Regex;
 use serenity::model::channel::Message;
-
 
 fn query_link_matches(url_str: &str, server: u64) -> Result<Vec<Link>> {
     let mut links = Vec::new();
@@ -51,10 +49,7 @@ fn get_links(msg: &str) -> Vec<String> {
         .collect()
 }
 
-pub fn store_links_and_get_reposts(
-    msg: &Message,
-    include_reply: bool,
-) -> Result<Option<RepostSet>> {
+pub fn store_links_and_get_reposts(msg: &Message, include_reply: bool) -> Result<RepostSet> {
     let mut reposts = RepostSet::new();
     let server_id = *msg.guild_id.unwrap().as_u64();
     for link in get_links(&msg.content) {
@@ -79,10 +74,15 @@ pub fn store_links_and_get_reposts(
     // if include_reply false len should always be 0
     if reposts.len() > 0 {
         info!("Found {} reposts: {reposts:?}", reposts.len());
-        Ok(Some(reposts))
-    } else {
-        Ok(None)
     }
+    Ok(reposts)
+}
+
+pub fn get_reposts_for_message_id(message_id: u64) -> Result<RepostSet> {
+    Ok(RepostSet::new_from_messages(
+        &DB::db_call(|db| db.query_reposts_for_message(message_id))?,
+        RepostType::Link,
+    ))
 }
 
 #[cfg(test)]

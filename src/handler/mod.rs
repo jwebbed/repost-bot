@@ -140,7 +140,7 @@ async fn process_message_update<'a>(
             None => &embeds_default,
         };
 
-        let reposts = ImageProcesser::new(
+        let mut reposts = ImageProcesser::new(
             msg_id,
             *event.guild_id.unwrap().as_u64(),
             attachments,
@@ -148,14 +148,14 @@ async fn process_message_update<'a>(
         )
         .process(should_reply)
         .await?;
-        if should_reply {
-            return reposts.map_or(Ok(None), |reposts| {
-                Ok(reposts.generate_reply_for_message_id(
-                    &event.id,
-                    &event.channel_id,
-                    db_msg.created_at,
-                ))
-            });
+        if should_reply && reposts.len() > 0 {
+            // need to get any link reposts if we're gonna edit the reply
+            reposts.union(&links::get_reposts_for_message_id(msg_id)?);
+            return Ok(reposts.generate_reply_for_message_id(
+                &event.id,
+                &event.channel_id,
+                db_msg.created_at,
+            ));
         }
     }
 
@@ -182,16 +182,11 @@ async fn process_message<'a>(
         }
         let mut repost_set = RepostSet::new();
         if !db_msg.is_embed_parsed() {
-            let processor = ImageProcesser::from_message(msg)?;
-            if let Some(reposts) = processor.process(new).await? {
-                repost_set.union(&reposts);
-            };
+            repost_set.union(&ImageProcesser::from_message(msg)?.process(new).await?);
         };
 
         if !db_msg.is_repost_parsed() {
-            if let Some(reposts) = links::store_links_and_get_reposts(msg, new)? {
-                repost_set.union(&reposts);
-            }
+            repost_set.union(&links::store_links_and_get_reposts(msg, new)?);
         };
 
         repost_set.generate_reply_for_message(msg)

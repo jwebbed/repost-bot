@@ -450,6 +450,47 @@ impl DB {
         Ok(links)
     }
 
+    pub fn query_reposts_for_message(&self, message_id: u64) -> Result<Vec<Message>> {
+        let conn = self.conn.borrow();
+        let mut stmt = conn.prepare(
+            "SELECT 
+                MR.id, MR.server, MR.channel, MR.author, MR.created_at, MR.parsed_repost, 
+                MR.parsed_wordle, MR.deleted, MR.checked_old, MR.parsed_embed
+            FROM message_link AS ML
+            JOIN message AS M ON ML.message=M.id
+            JOIN channel AS C ON M.channel=C.id
+            JOIN server AS S ON M.server=S.id
+            JOIN message_link AS MLR ON ML.link=MLR.link
+            JOIN message AS MR ON MLR.message = MR.id
+            WHERE 
+                M.id = (?1)
+                AND C.visible = TRUE
+                AND M.deleted IS NULL
+                AND M.server == MR.server
+                AND ML.id != MLR.id
+                AND MR.created_at < M.created_at",
+        )?;
+        let rows = stmt.query_map(params![message_id], |row| {
+            Ok(Message::new(
+                row.get(0)?, // id
+                row.get(1)?, // server
+                row.get(2)?, // channel
+                row.get(3)?, // author
+                row.get(4)?, // created_at
+                row.get(5)?, // parsed_repost
+                row.get(6)?, // parsed_wordle
+                row.get(9)?, // parsed_embed
+                row.get(7)?, // deleted
+                row.get(8)?, // checked_old
+            ))
+        })?;
+        let mut posts = Vec::new();
+        for row in rows {
+            posts.push(row?);
+        }
+        Ok(posts)
+    }
+
     pub fn hash_matches(
         &self,
         hash: &str,

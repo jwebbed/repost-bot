@@ -85,7 +85,7 @@ impl ImageProcesser<'_> {
         ))
     }
 
-    pub async fn process(&self, include_reply: bool) -> Result<Option<RepostSet>> {
+    pub async fn process(&self, include_reply: bool) -> Result<RepostSet> {
         store_images_direct(
             self.msg_id,
             self.server_id,
@@ -103,7 +103,7 @@ async fn store_images_direct<'a>(
     attachments: &'a Vec<Attachment>,
     embeds: &'a Vec<Embed>,
     include_reply: bool,
-) -> Result<Option<RepostSet>> {
+) -> Result<RepostSet> {
     let mut hashes = Vec::new();
     if !attachments.is_empty() {
         info!("msg {msg_id} has {} attachments", attachments.len());
@@ -184,9 +184,5 @@ async fn store_images_direct<'a>(
         }
         DB::db_call(|db| db.insert_image(url, &hash.to_base64(), msg_id))?;
     }
-    if reposts.len() > 0 {
-        Ok(Some(reposts))
-    } else {
-        Ok(None)
-    }
+    Ok(reposts)
 }

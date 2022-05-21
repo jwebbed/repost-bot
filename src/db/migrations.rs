@@ -398,4 +398,15 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_reply_table() -> Result<()> {
+        let table = get_table_info("reply")?;
+
+        assert_eq!(table.rows.len(), 3);
+        table.assert_row("id", "INTEGER", 0, None, 1);
+        table.assert_row("channel", "INTEGER", 1, None, 0);
+        table.assert_row("replied_to", "INTEGER", 1, None, 0);
+        Ok(())
+    }
 }
