@@ -4,9 +4,9 @@ A discord bot to scan, check, and inform users when they're reposting
 
 # To Do
 
-- Identify basic reposts ✅
-- Allow direct messaging such that it can inform you if a link is reposted in any mutual servers
-- Support images that may be from different links but are otherwise the same
+- ✅ Identify basic reposts
+- 🚧 Allow direct messaging such that it can inform you if a link is reposted in any mutual servers
+- ✅ Support images that may be from different links but are otherwise the same
 
 # FAQ
 
