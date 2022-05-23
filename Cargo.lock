@@ -170,6 +170,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "bot"
+version = "0.5.0"
+dependencies = [
+ "chrono",
+ "console-subscriber",
+ "humantime",
+ "image",
+ "img_hash",
+ "lazy_static",
+ "linkify",
+ "log",
+ "paste",
+ "phf",
+ "rand",
+ "regex",
+ "reqwest",
+ "rusqlite",
+ "serde_json",
+ "serenity",
+ "simple_logger",
+ "time 0.3.9",
+ "tokio",
+ "unicode-segmentation",
+ "url",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1439,33 +1466,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3acd125665422973a33ac9d3dd2df85edad0f4ae9b00dafb1a05e43a9f5ef8e7"
 dependencies = [
  "winapi",
-]
-
-[[package]]
-name = "repost-bot"
-version = "0.5.0"
-dependencies = [
- "chrono",
- "console-subscriber",
- "humantime",
- "image",
- "img_hash",
- "lazy_static",
- "linkify",
- "log",
- "paste",
- "phf",
- "rand",
- "regex",
- "reqwest",
- "rusqlite",
- "serde_json",
- "serenity",
- "simple_logger",
- "time 0.3.9",
- "tokio",
- "unicode-segmentation",
- "url",
 ]
 
 [[package]]
