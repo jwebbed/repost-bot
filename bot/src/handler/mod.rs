@@ -1,6 +1,7 @@
 mod commands;
 mod images;
 mod links;
+mod processor;
 mod wordle;
 
 use crate::errors::{Error, Result};
