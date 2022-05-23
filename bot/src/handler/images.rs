@@ -1,7 +1,7 @@
 use crate::errors::{Error, Result};
 use crate::structs::repost::{RepostSet, RepostType};
-use crate::DB;
 
+use db::DB;
 use image::error::ImageError;
 use image::io::Reader;
 use img_hash::{HashAlg, HasherConfig, ImageHash};

@@ -1,7 +1,7 @@
 use super::queries;
-use crate::errors::Result;
 use log::{info, trace};
-use rusqlite::Connection;
+use paste;
+use rusqlite::{Connection, Result};
 
 macro_rules! migration {
     ( $n:literal, $( $x:literal ),* ) => {

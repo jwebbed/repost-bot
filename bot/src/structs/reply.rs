@@ -1,6 +1,6 @@
-use crate::db::DB;
 use crate::errors::{Error, Result};
 
+use db::DB;
 use log::info;
 use serde_json::json;
 use serenity::builder::ParseValue;
@@ -19,13 +19,6 @@ pub enum ReplyType<'a> {
     Message(&'a model::channel::Message),
     Channel(model::id::ChannelId),
     MessageId(model::id::MessageId, model::id::ChannelId),
-}
-
-#[derive(Debug)]
-pub struct DbReply {
-    pub id: u64,
-    pub channel: u64,
-    pub replied_to: u64,
 }
 
 #[derive(Debug)]
@@ -107,11 +100,12 @@ impl Reply<'_> {
         }?;
 
         let db = DB::get_db()?;
-        db.add_reply(*reply_id.as_u64(), channel_id, replied_to)
+        db.add_reply(*reply_id.as_u64(), channel_id, replied_to)?;
+        Ok(())
     }
 }
 
-async fn edit_reply(ctx: &Context, db_reply: &DbReply, content: &str) -> Result<()> {
+async fn edit_reply(ctx: &Context, db_reply: &db::structs::Reply, content: &str) -> Result<()> {
     info!("Editing reply w/ id {}", db_reply.id);
     ctx.http
         .edit_message(

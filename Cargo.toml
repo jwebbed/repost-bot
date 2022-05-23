@@ -2,6 +2,7 @@
 
 members = [
     "bot",
+    "db",
 ]
 
 [profile.release]

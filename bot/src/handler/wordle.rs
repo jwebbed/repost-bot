@@ -1,6 +1,6 @@
-use super::{log_error};
-use crate::db::DB;
-use crate::structs::wordle::{LetterStatus, Wordle, WordleBoard};
+use super::log_error;
+use db::structs::wordle::{LetterStatus, Wordle, WordleBoard};
+use db::DB;
 use lazy_static::lazy_static;
 use regex::Regex;
 use serenity::model::channel::Message;

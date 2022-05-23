@@ -2,12 +2,11 @@ mod filter;
 
 use filter::filtered_url;
 
-use crate::db::DB;
 use crate::errors::Result;
-
 use crate::structs::repost::{RepostSet, RepostType};
-use crate::structs::Link;
 
+use db::structs::Link;
+use db::DB;
 use lazy_static::lazy_static;
 use linkify::{LinkFinder, LinkKind};
 use log::{error, info};

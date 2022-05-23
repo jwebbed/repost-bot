@@ -1,11 +1,9 @@
 mod pins;
 mod wordle;
 
-
-
-use crate::db::DB;
 use crate::errors::Result;
 use crate::structs::reply::{Reply, ReplyType};
+use db::DB;
 
 use log::warn;
 use serenity::{model::channel::Message, prelude::*};

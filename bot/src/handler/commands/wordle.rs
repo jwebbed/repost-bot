@@ -1,7 +1,8 @@
-use crate::db::DB;
 use crate::errors::Result;
 use crate::structs::reply::{Reply, ReplyType};
-use crate::structs::wordle::Wordle;
+
+use db::structs::wordle::Wordle;
+use db::DB;
 use serenity::{model::channel::Message, prelude::*};
 
 fn wordle_score_distribution(wordles: &[Wordle]) -> String {

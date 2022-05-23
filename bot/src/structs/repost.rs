@@ -1,7 +1,7 @@
 use crate::structs::reply::{Reply, ReplyType};
-use crate::structs::Message;
 
 use chrono::{DateTime, Utc};
+use db::structs::Message;
 use humantime::format_duration;
 use log::{error, info};
 use serenity::model;

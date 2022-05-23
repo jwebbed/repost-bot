@@ -10,6 +10,7 @@ license = "GPL-3.0-or-later"
 
 
 [dependencies]
+db = { path = "../db" }
 chrono = "0.4"
 url = "2"
 linkify = "0.8.0"
@@ -21,7 +22,6 @@ simple_logger = "2"
 phf = { version = "0.10", features = ["macros"] }
 unicode-segmentation = "1.7"
 rand = "0.8"
-paste = "1.0"
 time = "0.3"
 image = { version = ">=0.21,<0.24" }
 img_hash = "3.2.0"

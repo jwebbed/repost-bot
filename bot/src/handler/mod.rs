@@ -3,17 +3,18 @@ mod images;
 mod links;
 mod wordle;
 
-use crate::db::DB;
 use crate::errors::{Error, Result};
-use crate::structs;
 use crate::structs::reply::Reply;
 use crate::structs::repost::RepostSet;
-use images::ImageProcesser;
 
+use db;
+use db::DB;
+use images::ImageProcesser;
 use log::{debug, error, info, trace, warn};
 
 use rand::seq::SliceRandom;
 use rand::{random, thread_rng};
+use rusqlite;
 use serenity::{
     async_trait,
     model::{
@@ -35,7 +36,7 @@ use std::{sync::Arc, time::Duration};
 pub struct Handler;
 
 #[inline(always)]
-pub fn log_error<T>(r: Result<T>, label: &str) {
+pub fn log_error<T>(r: rusqlite::Result<T>, label: &str) {
     match r {
         Ok(_) => (),
         Err(why) => error!("{label} failed with error: {why:?}"),
@@ -58,7 +59,7 @@ async fn bot_read_channel_permission(ctx: &Context, channel: &GuildChannel) -> b
 }
 
 /// takes the message from discord, stores it, and returns the db struct for further processing
-async fn process_discord_message(ctx: &Context, msg: &Message) -> Result<structs::Message> {
+async fn process_discord_message(ctx: &Context, msg: &Message) -> Result<db::structs::Message> {
     if msg.author.bot {
         return Err(Error::BotMessage);
     }
@@ -91,14 +92,14 @@ async fn process_discord_message(ctx: &Context, msg: &Message) -> Result<structs
     // we can assume channel is visible if we are receiving messages for it
     db.update_channel(channel_id, server_id, &channel_name.unwrap(), true)?;
 
-    let ret = db.add_message(msg.id, channel_id, server_id, author_id);
+    let ret = db.add_message(msg.id, channel_id, server_id, author_id)?;
 
     trace!(
         "process_discord_message time elapsed: {:.2?}",
         now.elapsed()
     );
 
-    ret
+    Ok(ret)
 }
 
 async fn process_message_update<'a>(

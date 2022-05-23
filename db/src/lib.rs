@@ -1,13 +1,14 @@
 mod migrations;
 mod queries;
+pub mod structs;
 
-use crate::errors::{Error, Result};
 use crate::structs::wordle::{LetterStatus, Wordle, WordleBoard};
-use crate::structs::{Channel, DbReply, Link, Message, RepostCount, ReposterCount};
+use crate::structs::{Channel, Link, Message, Reply, RepostCount, ReposterCount};
 
-use log::{debug, info};
+use log::{debug, info, warn};
 use rusqlite::types::ToSql;
-use rusqlite::{params, Connection, OptionalExtension, Row};
+
+use rusqlite::{params, Connection, Error, OptionalExtension, Result, Row};
 use serenity::model::id::{ChannelId, GuildId, MessageId};
 use std::cell::RefCell;
 
@@ -74,6 +75,25 @@ impl DB {
             WHERE (server.name IS NULL AND excluded.name IS NOT NULL)",
         )?;
 
+        let count = match name {
+            Some(n) => stmt.execute(params![server_id, n]),
+            None => stmt.execute(params![server_id, rusqlite::types::Null]),
+        }?;
+
+        if count > 0 {
+            info!(
+                "Added server_id {} with name {} to db",
+                server_id,
+                match name {
+                    Some(n) => n,
+                    None => "NULL",
+                }
+            );
+        };
+
+        Ok(())
+
+        /*
         match match name {
             Some(n) => stmt.execute(params![server_id, n]),
             None => stmt.execute(params![server_id, rusqlite::types::Null]),
@@ -92,8 +112,8 @@ impl DB {
 
                 Ok(())
             }
-            Err(why) => Err(Error::from(why)),
-        }
+            Err(why) => Err(why),
+        }*/
     }
     pub fn get_message(&self, message_id: MessageId) -> Result<Option<Message>> {
         let conn = self.conn.borrow();
@@ -184,9 +204,11 @@ impl DB {
 
         match queries::get_message(&conn, msg_id64)? {
             Some(msg) => Ok(msg),
-            None => Err(Error::ConstStr(
-                "No message with input id found despite being just added",
-            )),
+            None => {
+                // should return a special error at some point
+                warn!("No message with input id found despite being just added");
+                Err(Error::QueryReturnedNoRows)
+            }
         }
     }
 
@@ -641,13 +663,19 @@ impl DB {
             ON CONFLICT(message) DO NOTHING",
             repeat_vars(4 + 5 * 6)
         ))?;
-
+        /*
         match stmt.execute(rusqlite::params_from_iter(
             wordle.get_query_parts(message_id),
         )) {
             Ok(_) => Ok(()),
             Err(why) => Err(Error::from(why)),
-        }
+        }*/
+
+        stmt.execute(rusqlite::params_from_iter(
+            wordle.get_query_parts(message_id),
+        ))?;
+
+        Ok(())
     }
     pub fn get_wordles_for_author(&self, author_id: u64, server_id: u64) -> Result<Vec<Wordle>> {
         let conn = self.conn.borrow();
@@ -725,7 +753,7 @@ impl DB {
         Ok(())
     }
 
-    pub fn get_reply(&self, replied_id: u64) -> Result<Option<DbReply>> {
+    pub fn get_reply(&self, replied_id: u64) -> Result<Option<Reply>> {
         let conn = self.conn.borrow();
         Ok(conn
             .query_row(
@@ -733,7 +761,7 @@ impl DB {
             FROM reply WHERE replied_to=(?1)",
                 [replied_id],
                 |row| {
-                    Ok(DbReply {
+                    Ok(Reply {
                         id: row.get(0)?,
                         channel: row.get(1)?,
                         replied_to: row.get(2)?,
