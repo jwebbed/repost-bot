@@ -11,7 +11,6 @@ use db;
 use db::DB;
 use images::ImageProcesser;
 use log::{debug, error, info, trace, warn};
-
 use rand::seq::SliceRandom;
 use rand::{random, thread_rng};
 use rusqlite;
@@ -27,11 +26,8 @@ use serenity::{
     },
     prelude::*,
 };
-
-use std::collections::HashMap;
-use std::collections::HashSet;
-use std::time::Instant;
-use std::{sync::Arc, time::Duration};
+use std::collections::{HashMap, HashSet};
+use std::time::{Duration, Instant};
 
 pub struct Handler;
 
@@ -449,20 +445,20 @@ impl EventHandler for Handler {
                 return;
             }
         };
-        let ctx = Arc::new(ctx);
+
+        let ctx: &'static Context = Box::leak(Box::new(ctx));
         for guild in guilds {
-            let server_name = guild.name(&ctx);
+            let server_name = guild.name(ctx);
 
             log_error(
                 db.update_server(*guild.as_u64(), &server_name),
                 "Update server name from cache_ready",
             );
 
-            let ctxn = Arc::clone(&ctx);
-            let g = Arc::new(*guild.as_u64());
+            let g = *guild.as_u64();
             tokio::spawn(async move {
                 loop {
-                    let tts = match process_old_messages(&ctxn, &g).await {
+                    let tts = match process_old_messages(ctx, &g).await {
                         Ok(val) => {
                             if val == 0 {
                                 10 * 60
@@ -475,11 +471,12 @@ impl EventHandler for Handler {
                             240
                         }
                     };
+                    trace!("process old message task sleeping {tts}s");
                     tokio::time::sleep(Duration::from_secs(tts)).await;
                 }
             });
 
-            match guild.channels(&ctx).await {
+            match guild.channels(ctx).await {
                 Ok(all_channels) => {
                     let mut mchannels = HashMap::new();
                     for (k, v) in all_channels {
@@ -510,7 +507,7 @@ impl EventHandler for Handler {
                     // insert all channels to update names and build visibility map
                     let mut visibility_map = HashMap::with_capacity(channels.len());
                     for (id, channel) in channels.clone() {
-                        let visible = bot_read_channel_permission(&ctx, &channel).await;
+                        let visible = bot_read_channel_permission(ctx, &channel).await;
                         visibility_map.insert(id, visible);
                         log_error(
                             db.update_channel(
