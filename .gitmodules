@@ -1,0 +1,3 @@
+[submodule "img_hash"]
+	path = img_hash
+	url = git@github.com:archer884/img_hash.git

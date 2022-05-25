@@ -1,8 +1,9 @@
 [workspace]
-
+default-members = ["bot"]
 members = [
     "bot",
     "db",
+    "img_hash",
 ]
 
 [profile.release]
