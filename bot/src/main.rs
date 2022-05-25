@@ -8,7 +8,7 @@ mod errors;
 mod handler;
 mod structs;
 
-use db;
+
 use log::LevelFilter;
 use log::{error, info, warn};
 use serenity::model::gateway::GatewayIntents;

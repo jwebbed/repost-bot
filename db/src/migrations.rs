@@ -1,6 +1,6 @@
 use super::queries;
 use log::{info, trace};
-use paste;
+
 use rusqlite::{Connection, Result};
 
 macro_rules! migration {

@@ -3,7 +3,7 @@ use crate::structs::reply::{Reply, ReplyType};
 use chrono::{DateTime, Utc};
 use db::structs::Message;
 use humantime::format_duration;
-use log::{error, info};
+use log::info;
 use serenity::model;
 use std::collections::{HashMap, HashSet};
 use std::vec::Vec;
@@ -81,46 +81,37 @@ impl RepostSet {
         if !self.reposts.is_empty() {
             info!("generating reply for {self:?}");
         }
-        if self.reposts.len() > 1 {
-            let mut msgs_mut: Vec<Message> = self.reposts.clone().into_keys().collect();
-            msgs_mut.sort_by(|a, b| a.created_at.cmp(&b.created_at));
-            let msgs = msgs_mut;
+        match self.reposts.len() {
+            0 => None,
+            1 => {
+                let (msg, rtypes) = self.reposts.iter().next().unwrap();
+                let prefix = prefix_text(rtypes, true);
+                let link_text = repost_text(msg, reply_to_created_at);
+                Some(format!("🚨 {prefix} 🚨 REPOST 🚨 {link_text}"))
+            }
+            _ => {
+                let mut msgs_mut: Vec<Message> = self.reposts.clone().into_keys().collect();
+                msgs_mut.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+                let msgs = msgs_mut;
 
-            let lines = msgs
-                .iter()
-                .map(|x| {
-                    let text = repost_text(x, reply_to_created_at);
-                    if self.types.len() > 1 {
-                        // should never panic since this is literally just an iter of the sorted keys
-                        let thing = self.reposts.get(x).unwrap();
-                        format!("{} {text}", prefix_text(thing, false))
-                    } else {
-                        text
-                    }
-                })
-                .collect::<Vec<String>>()
-                .join("\n");
+                let lines = msgs
+                    .iter()
+                    .map(|x| {
+                        let text = repost_text(x, reply_to_created_at);
+                        if self.types.len() > 1 {
+                            // should never panic since this is literally just an iter of the sorted keys
+                            let thing = self.reposts.get(x).unwrap();
+                            format!("{} {text}", prefix_text(thing, false))
+                        } else {
+                            text
+                        }
+                    })
+                    .collect::<Vec<String>>()
+                    .join("\n");
 
-            let header_prefix = format!("{} 🚨 ", prefix_text(&self.types, true));
-            Some(format!("🚨 {}REPOST 🚨\n{}", header_prefix, lines))
-        } else if self.reposts.len() == 1 {
-            self.reposts.iter().next().map_or_else(
-                || {
-                    // in principle this code path should be impossible since we've already checked the length
-                    error!(
-                        "RepostSet had 1 element but got None when extracting it {:?}",
-                        self.reposts
-                    );
-                    None
-                },
-                |(msg, rtypes)| {
-                    let prefix = prefix_text(rtypes, true);
-                    let link_text = repost_text(msg, reply_to_created_at);
-                    Some(format!("🚨 {prefix} 🚨 REPOST 🚨 {link_text}"))
-                },
-            )
-        } else {
-            None
+                let header_prefix = format!("{} 🚨 ", prefix_text(&self.types, true));
+                Some(format!("🚨 {}REPOST 🚨\n{}", header_prefix, lines))
+            }
         }
     }
 }

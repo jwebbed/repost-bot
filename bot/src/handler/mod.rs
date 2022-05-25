@@ -7,13 +7,13 @@ use crate::errors::{Error, Result};
 use crate::structs::reply::Reply;
 use crate::structs::repost::RepostSet;
 
-use db;
+
 use db::DB;
 use images::ImageProcesser;
 use log::{debug, error, info, trace, warn};
 use rand::seq::SliceRandom;
 use rand::{random, thread_rng};
-use rusqlite;
+
 use serenity::{
     async_trait,
     model::{

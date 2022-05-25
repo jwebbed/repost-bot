@@ -117,7 +117,7 @@ impl DB {
     }
     pub fn get_message(&self, message_id: MessageId) -> Result<Option<Message>> {
         let conn = self.conn.borrow();
-        Ok(queries::get_message(&conn, *message_id.as_u64())?)
+        queries::get_message(&conn, *message_id.as_u64())
     }
 
     pub fn get_newest_unchecked_message(&self, server_id: u64) -> Result<Option<Message>> {
@@ -330,7 +330,7 @@ impl DB {
 
                 Ok(())
             }
-            Err(why) => Err(Error::from(why)),
+            Err(why) => Err(why),
         }
     }
 
@@ -755,7 +755,7 @@ impl DB {
 
     pub fn get_reply(&self, replied_id: u64) -> Result<Option<Reply>> {
         let conn = self.conn.borrow();
-        Ok(conn
+        conn
             .query_row(
                 "SELECT  id, channel, replied_to
             FROM reply WHERE replied_to=(?1)",
@@ -768,7 +768,7 @@ impl DB {
                     })
                 },
             )
-            .optional()?)
+            .optional()
     }
 }
 
