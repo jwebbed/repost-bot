@@ -17,6 +17,15 @@ static IGNORED_PROVIDERS: phf::Set<&'static str> = phf_set! {
     "YouTube",
 };
 
+// Primarily a seperate function for testing purposes
+fn hash_img(image: &image::DynamicImage) -> ImageHash {
+    HasherConfig::new()
+        .hash_alg(HashAlg::Gradient)
+        .hash_size(16, 16)
+        .to_hasher()
+        .hash_image(image)
+}
+
 fn get_image_hash(bytes: &Vec<u8>) -> Result<Option<ImageHash>> {
     let image = Reader::new(Cursor::new(bytes))
         .with_guessed_format()?
@@ -28,13 +37,7 @@ fn get_image_hash(bytes: &Vec<u8>) -> Result<Option<ImageHash>> {
             return Ok(None);
         }
     }
-    Ok(Some(
-        HasherConfig::new()
-            .hash_alg(HashAlg::Gradient)
-            .hash_size(16, 16)
-            .to_hasher()
-            .hash_image(&image?),
-    ))
+    Ok(Some(hash_img(&image?)))
 }
 
 async fn download_and_hash(url: &str, proxy_url: Option<&String>) -> Result<Option<ImageHash>> {
@@ -185,4 +188,43 @@ async fn store_images_direct<'a>(
         DB::db_call(|db| db.insert_image(url, &hash.to_base64(), msg_id))?;
     }
     Ok(reposts)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::env;
+
+    macro_rules! image_hash_tests {
+        ($($name:ident: $value:expr,)*) => {
+        $(
+            #[test]
+            fn $name() {
+                let (file_name, expected_hash) = $value;
+                let root_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
+                let image = image::open(format!("{root_dir}/test_resources/{file_name}")).unwrap();
+                assert_eq!(
+                    expected_hash,
+                    &hash_img(&image).to_base64()
+                );
+
+            }
+        )*
+        }
+    }
+
+    // These tests primarily exist to identify if something changes in the underlying
+    // img_hash library, to identify that it still hashs known images the way we expect
+    // it too. Further it should also fail on any changes we make to how we use said lib
+
+    // TODO: Should add non-jpeg file formats to ensure matching across file formats
+    image_hash_tests! {
+        photo1_large: ("photo1_large.jpg", "MuNy4INik8O0wRjlGjZNdmlPbA9kO9f50/hDek3aRcY="),
+        photo1_med:   ("photo1_med.jpg",   "MuNy4INik8O0wRjlGjZNdmlPbA9kO9f50/hDek3aRcY="),
+        photo1_small: ("photo1_small.jpg", "MuNy4INik8O0wRjlGjZNdmlPbA9kO9f50/hDek3aRcY="),
+        photo2_large: ("photo2_large.jpg", "2YXmlWYDvQiN0M7Gfw7ZPNi0mB2QKbF7MLYn5QEvAXM="),
+        photo2_med:   ("photo2_med.jpg",   "2YXmlWYDvQiN0M7Gfw7ZPNi0mB2QKbF7MLYn5QEvAXM="),
+        photo2_small: ("photo2_small.jpg", "2YXmlWYDvQiN0M7Gfw7ZPNi0mB2QKbF7MLYn5QEvAXM="),
+        photo2_xs:    ("photo2_xs.jpg",    "2YXmlWYDvQiN0M7Gfw7ZPNi0mB2QKbF7MLYn5QEvAXM="),
+    }
 }
