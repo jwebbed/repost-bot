@@ -92,28 +92,6 @@ impl DB {
         };
 
         Ok(())
-
-        /*
-        match match name {
-            Some(n) => stmt.execute(params![server_id, n]),
-            None => stmt.execute(params![server_id, rusqlite::types::Null]),
-        } {
-            Ok(cnt) => {
-                if cnt > 0 {
-                    info!(
-                        "Added server_id {} with name {} to db",
-                        server_id,
-                        match name {
-                            Some(n) => n,
-                            None => "NULL",
-                        }
-                    );
-                };
-
-                Ok(())
-            }
-            Err(why) => Err(why),
-        }*/
     }
     pub fn get_message(&self, message_id: MessageId) -> Result<Option<Message>> {
         let conn = self.conn.borrow();
@@ -755,20 +733,19 @@ impl DB {
 
     pub fn get_reply(&self, replied_id: u64) -> Result<Option<Reply>> {
         let conn = self.conn.borrow();
-        conn
-            .query_row(
-                "SELECT  id, channel, replied_to
+        conn.query_row(
+            "SELECT  id, channel, replied_to
             FROM reply WHERE replied_to=(?1)",
-                [replied_id],
-                |row| {
-                    Ok(Reply {
-                        id: row.get(0)?,
-                        channel: row.get(1)?,
-                        replied_to: row.get(2)?,
-                    })
-                },
-            )
-            .optional()
+            [replied_id],
+            |row| {
+                Ok(Reply {
+                    id: row.get(0)?,
+                    channel: row.get(1)?,
+                    replied_to: row.get(2)?,
+                })
+            },
+        )
+        .optional()
     }
 }
 
