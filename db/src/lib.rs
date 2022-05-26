@@ -12,50 +12,29 @@ use rusqlite::{params, Connection, Error, OptionalExtension, Result, Row};
 use serenity::model::id::{ChannelId, GuildId, MessageId};
 use std::cell::RefCell;
 
-fn repeat_vars(count: usize) -> String {
-    assert_ne!(count, 0);
-    let mut s = "?,".repeat(count);
-    // Remove trailing comma
-    s.pop();
-    s
-}
-
-#[inline(always)]
-fn extract_first_result<I, T>(iter: &mut I) -> Result<Option<T>>
-where
-    I: Iterator<Item = rusqlite::Result<T>>,
-{
-    // I hate this less than what I was doing before, but still works
-    let ret = match iter.next() {
-        Some(ret) => Some(ret?),
-        None => None,
-    };
-
-    Ok(ret)
-}
-
 pub struct DB {
     conn: RefCell<Connection>,
 }
 
 impl DB {
+    #[inline(always)]
     fn get_connection() -> Result<Connection> {
-        const IN_MEMORY_DB: bool = false;
-        let db = if IN_MEMORY_DB {
-            Connection::open_in_memory()?
-        } else {
-            let path = "./repost.db3";
-            Connection::open(&path)?
-        };
-
-        Ok(db)
+        const DB_FILE_PATH: &str = "./repost.db3";
+        Connection::open(DB_FILE_PATH)
     }
+
+    fn get_test_db() -> Result<DB> {
+        Ok(DB {
+            conn: RefCell::new(Connection::open_in_memory()?),
+        })
+    }
+
     pub fn get_db() -> Result<DB> {
-        // set to true to test without migration issues
         Ok(DB {
             conn: RefCell::new(DB::get_connection()?),
         })
     }
+
     pub fn db_call<F, T>(f: F) -> Result<T>
     where
         F: FnOnce(DB) -> Result<T>,
@@ -755,24 +734,24 @@ impl DB {
 
     pub fn get_reply(&self, replied_id: u64) -> Result<Option<Reply>> {
         let conn = self.conn.borrow();
-        conn
-            .query_row(
-                "SELECT  id, channel, replied_to
+        conn.query_row(
+            "SELECT  id, channel, replied_to
             FROM reply WHERE replied_to=(?1)",
-                [replied_id],
-                |row| {
-                    Ok(Reply {
-                        id: row.get(0)?,
-                        channel: row.get(1)?,
-                        replied_to: row.get(2)?,
-                    })
-                },
-            )
-            .optional()
+            [replied_id],
+            |row| {
+                Ok(Reply {
+                    id: row.get(0)?,
+                    channel: row.get(1)?,
+                    replied_to: row.get(2)?,
+                })
+            },
+        )
+        .optional()
     }
 }
 
 impl Wordle {
+    #[inline(always)]
     fn get_query_parts(&self, message_id: u64) -> Vec<Box<dyn ToSql>> {
         let mut ret: Vec<Box<dyn ToSql>> = vec![
             Box::new(message_id),
@@ -786,4 +765,27 @@ impl Wordle {
         }
         ret
     }
+}
+
+#[inline(always)]
+fn repeat_vars(count: usize) -> String {
+    assert_ne!(count, 0);
+    let mut s = "?,".repeat(count);
+    // Remove trailing comma
+    s.pop();
+    s
+}
+
+#[inline(always)]
+fn extract_first_result<I, T>(iter: &mut I) -> Result<Option<T>>
+where
+    I: Iterator<Item = rusqlite::Result<T>>,
+{
+    // I hate this less than what I was doing before, but still works
+    let ret = match iter.next() {
+        Some(ret) => Some(ret?),
+        None => None,
+    };
+
+    Ok(ret)
 }
