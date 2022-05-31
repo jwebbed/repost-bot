@@ -7,7 +7,6 @@ use crate::errors::{Error, Result};
 use crate::structs::reply::Reply;
 use crate::structs::repost::RepostSet;
 
-
 use db::DB;
 use images::ImageProcesser;
 use log::{debug, error, info, trace, warn};
@@ -167,7 +166,7 @@ async fn process_message<'a>(
     // need to do this first, also does validation
     let db_msg = process_discord_message(ctx, msg).await?;
 
-    let ret = if msg.content.starts_with("!rpm") {
+    let ret = if commands::has_command_prefix(&msg.content) {
         if new {
             commands::handle_command(ctx, msg).await
         } else {
