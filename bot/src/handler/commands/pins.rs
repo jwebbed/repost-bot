@@ -1,4 +1,5 @@
 use crate::errors::Result;
+use crate::handler::bot_read_channel_permission;
 use crate::structs::reply::{Reply, ReplyType};
 
 use log::trace;
@@ -11,7 +12,8 @@ pub async fn pins<'a>(ctx: &Context, msg: &'a Message) -> Result<Reply<'a>> {
     let channels = guild.channels(&ctx.http).await?;
     let mut pins = Vec::<Message>::new();
     for (_, channel) in channels.iter() {
-        if channel.kind == ChannelType::Text {
+        let visible = bot_read_channel_permission(&ctx, channel).await;
+        if visible && channel.kind == ChannelType::Text {
             pins.extend(channel.pins(&ctx.http).await?);
         }
     }
