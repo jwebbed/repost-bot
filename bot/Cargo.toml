@@ -1,9 +1,9 @@
 [package]
 name = "bot"
-version = "0.5.0"
+version = "0.5.1"
 authors = ["Jonathan Webb <jonathan@webb.nyc>"]
 edition = "2021"
-rust-version = "1.61"
+rust-version = "1.64"
 license = "GPL-3.0-or-later"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -13,12 +13,12 @@ license = "GPL-3.0-or-later"
 db = { path = "../db" }
 chrono = "0.4"
 url = "2"
-linkify = "0.8.0"
+linkify = "0.9.0"
 regex = "1"
 lazy_static = "1.4.0"
 humantime = "2.1.0"
 log = "0.4"
-simple_logger = "2"
+simple_logger = "4"
 phf = { version = "0.11", features = ["macros"] }
 unicode-segmentation = "1.7"
 rand = "0.8"
