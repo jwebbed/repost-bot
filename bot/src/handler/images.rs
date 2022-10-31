@@ -4,13 +4,13 @@ use crate::structs::repost::{RepostSet, RepostType};
 use db::DB;
 use image::error::ImageError;
 use image::io::Reader;
-use img_hash::{HashAlg, HasherConfig, ImageHash};
 use log::{info, warn};
 use phf::phf_set;
 use serenity::model::channel::{Attachment, Embed};
 use serenity::model::prelude::Message;
 use std::io::Cursor;
 use std::time::Instant;
+use visual_hash::{HashAlg, HasherConfig, ImageHash};
 
 static IGNORED_PROVIDERS: phf::Set<&'static str> = phf_set! {
     "Tenor",
@@ -214,7 +214,7 @@ mod tests {
     }
 
     // These tests primarily exist to identify if something changes in the underlying
-    // img_hash library, to identify that it still hashs known images the way we expect
+    // visual_hash library, to identify that it still hashs known images the way we expect
     // it too. Further it should also fail on any changes we make to how we use said lib
 
     // TODO: Should add non-jpeg file formats to ensure matching across file formats

@@ -3,7 +3,6 @@ default-members = ["bot"]
 members = [
     "bot",
     "db",
-    "img_hash",
 ]
 
 [profile.release]
@@ -16,4 +15,4 @@ split-debuginfo = "unpacked"
 # it is otherwise extremely slow
 [profile.dev.package]
 image = { opt-level = 3 } 
-img_hash = { opt-level = 3 } 
+visual-hash = { opt-level = 3 } 
