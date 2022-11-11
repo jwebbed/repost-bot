@@ -96,6 +96,11 @@ fn transform_url(url: Url) -> Result<Url> {
                     None
                 }
             }
+            "twitter.com" => {
+                let mut new_url = url.clone();
+                new_url.set_path(&url.path().to_ascii_lowercase());
+                Some(new_url)
+            }
             _ => None,
         }
     } else {
@@ -161,6 +166,14 @@ mod tests {
     fn test_filter_youtube() -> Result<()> {
         let filtered = filtered_url("https://youtube.com/shorts/fakeid?feature=share")?;
         assert_eq!(filtered.as_str(), "https://youtube.com/shorts/fakeid");
+        Ok(())
+    }
+
+    #[test]
+    fn test_twitter_case_insenstive() -> Result<()> {
+        let url_lower = filtered_url("https://twitter.com/name/status/000")?;
+        let url_cased = filtered_url("https://twitter.com/NaMe/status/000")?;
+        assert_eq!(url_lower, url_cased);
         Ok(())
     }
 
