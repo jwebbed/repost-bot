@@ -15,6 +15,7 @@ use rand::{random, thread_rng};
 
 use serenity::{
     async_trait,
+    cache::Cache,
     model::{
         channel::{Channel, ChannelType, GuildChannel, Message, MessageType},
         gateway::Ready,
@@ -43,9 +44,9 @@ fn regular_text_msg(kind: MessageType) -> bool {
     kind == MessageType::Regular || kind == MessageType::InlineReply
 }
 
-pub async fn bot_read_channel_permission(ctx: &Context, channel: &GuildChannel) -> bool {
-    let current_user_id = ctx.cache.current_user().id;
-    match channel.permissions_for_user(&ctx.cache, current_user_id) {
+pub async fn bot_read_channel_permission(cache: impl AsRef<Cache>, channel: &GuildChannel) -> bool {
+    let current_user_id = cache.as_ref().current_user().id;
+    match channel.permissions_for_user(cache, current_user_id) {
         Ok(permissions) => {
             permissions.contains(Permissions::READ_MESSAGE_HISTORY | Permissions::VIEW_CHANNEL)
         }
