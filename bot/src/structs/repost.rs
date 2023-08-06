@@ -174,7 +174,7 @@ mod tests {
     }
 
     fn get_datetime(h: u32, m: u32, s: u32) -> DateTime<Utc> {
-        Utc.ymd(2022, 5, 1).and_hms(h, m, s)
+        Utc.with_ymd_and_hms(2022, 5, 1, h, m, s).unwrap()
     }
 
     #[test]
@@ -249,7 +249,7 @@ mod tests {
             RepostType::Image,
         );
 
-        let reply_str = set.generate_reply(Utc.ymd(2022, 5, 1).and_hms(3, 0, 0));
+        let reply_str = set.generate_reply(Utc.with_ymd_and_hms(2022, 5, 1, 3, 0, 0).unwrap());
         assert_eq!(
             Some(
                 "🚨 IMAGE 🚨 REPOST 🚨\n\
@@ -274,7 +274,7 @@ mod tests {
             RepostType::Link,
         );
 
-        let reply_str = set.generate_reply(Utc.ymd(2022, 5, 1).and_hms(3, 0, 0));
+        let reply_str = set.generate_reply(Utc.with_ymd_and_hms(2022, 5, 1, 3, 0, 0).unwrap());
         assert_eq!(
             Some(
                 "🚨 LINK 🚨 REPOST 🚨\n\
@@ -299,7 +299,7 @@ mod tests {
             RepostType::Link,
         );
 
-        let reply_str = set.generate_reply(Utc.ymd(2022, 5, 1).and_hms(3, 0, 0));
+        let reply_str = set.generate_reply(Utc.with_ymd_and_hms(2022, 5, 1, 3, 0, 0).unwrap());
         assert_eq!(
             Some(
                 "🚨 IMAGE/LINK 🚨 REPOST 🚨\n\
@@ -329,7 +329,7 @@ mod tests {
             RepostType::Image,
         );
 
-        let reply_str = set.generate_reply(Utc.ymd(2022, 5, 1).and_hms(3, 0, 0));
+        let reply_str = set.generate_reply(Utc.with_ymd_and_hms(2022, 5, 1, 3, 0, 0).unwrap());
         assert_eq!(
             Some(
                 "🚨 IMAGE/LINK 🚨 REPOST 🚨\n\
@@ -348,7 +348,7 @@ mod tests {
         set.add(msg, RepostType::Link);
         set.add(msg, RepostType::Image);
 
-        let reply_str = set.generate_reply(Utc.ymd(2022, 5, 1).and_hms(2, 0, 0));
+        let reply_str = set.generate_reply(Utc.with_ymd_and_hms(2022, 5, 1, 2, 0, 0).unwrap());
         assert_eq!(
             Some("🚨 IMAGE/LINK 🚨 REPOST 🚨 1h https://discord.com/channels/1/1/1".to_string()),
             reply_str
