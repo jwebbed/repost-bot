@@ -169,7 +169,7 @@ mod tests {
 
     const fn get_message(id: u64, server: u64, channel: u64, created_at: DateTime<Utc>) -> Message {
         Message::new(
-            id, server, channel, None, created_at, None, None, None, None, None,
+            id, server, channel, None, created_at, None, None, None, None,
         )
     }
 

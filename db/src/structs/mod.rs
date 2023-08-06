@@ -1,6 +1,5 @@
 mod link;
 mod message;
-pub mod wordle;
 
 pub use link::Channel;
 pub use link::Link;

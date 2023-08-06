@@ -17,7 +17,6 @@ pub struct Message {
 
     // flags to indicate if various things were processed
     parsed_repost: Option<DateTime<Utc>>,
-    parsed_wordle: Option<DateTime<Utc>>,
     parsed_embed: Option<DateTime<Utc>>,
     deleted: Option<DateTime<Utc>>,
     checked_old: Option<DateTime<Utc>>,
@@ -32,7 +31,6 @@ impl Message {
         author: Option<u64>,
         created_at: DateTime<Utc>,
         parsed_repost: Option<DateTime<Utc>>,
-        parsed_wordle: Option<DateTime<Utc>>,
         parsed_embed: Option<DateTime<Utc>>,
         deleted: Option<DateTime<Utc>>,
         checked_old: Option<DateTime<Utc>>,
@@ -44,7 +42,6 @@ impl Message {
             author,
             created_at,
             parsed_repost,
-            parsed_wordle,
             parsed_embed,
             deleted,
             checked_old,
@@ -59,10 +56,6 @@ impl Message {
 
     pub const fn is_repost_parsed(&self) -> bool {
         self.parsed_repost.is_some()
-    }
-
-    pub const fn is_wordle_parsed(&self) -> bool {
-        self.parsed_wordle.is_some()
     }
 
     pub const fn is_embed_parsed(&self) -> bool {
@@ -129,8 +122,8 @@ mod tests {
         // in reality every message with the same id should always have the same data.
         // for test sake will give both different data with same id to ensure it's only
         // checking the id
-        let message1 = Message::new(1, 1, 1, None, Utc::now(), None, None, None, None, None);
-        let message2 = Message::new(1, 2, 2, None, Utc::now(), None, None, None, None, None);
+        let message1 = Message::new(1, 1, 1, None, Utc::now(), None, None, None, None);
+        let message2 = Message::new(1, 2, 2, None, Utc::now(), None, None, None, None);
 
         assert_eq!(message1, message2);
     }

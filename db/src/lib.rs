@@ -2,23 +2,13 @@ mod migrations;
 mod queries;
 pub mod structs;
 
-use crate::structs::wordle::{LetterStatus, Wordle, WordleBoard};
 use crate::structs::{Channel, Link, Message, Reply, RepostCount, ReposterCount};
 
 use log::{debug, info, warn};
-use rusqlite::types::ToSql;
 
 use rusqlite::{params, Connection, Error, OptionalExtension, Result, Row};
 use serenity::model::id::{ChannelId, GuildId, MessageId};
 use std::cell::RefCell;
-
-fn repeat_vars(count: usize) -> String {
-    assert_ne!(count, 0);
-    let mut s = "?,".repeat(count);
-    // Remove trailing comma
-    s.pop();
-    s
-}
 
 #[inline(always)]
 fn extract_first_result<I, T>(iter: &mut I) -> Result<Option<T>>
@@ -102,8 +92,7 @@ impl DB {
         let conn = self.conn.borrow();
         let mut stmt = conn.prepare(
             "SELECT M.id, M.server, M.channel, M.author, M.created_at, 
-                    M.parsed_repost, M.parsed_wordle, M.deleted, M.checked_old, 
-                    M.parsed_embed
+                    M.parsed_repost, M.deleted, M.checked_old, M.parsed_embed
             FROM message as M 
             JOIN channel as C on C.id=M.channel
             WHERE 
@@ -123,10 +112,9 @@ impl DB {
                 row.get(3)?, // author
                 row.get(4)?, // created_at
                 row.get(5)?, // parsed_repost
-                row.get(6)?, // parsed_wordle
-                row.get(9)?, // parsed_embed
-                row.get(7)?, // deleted
-                row.get(8)?, // checked_old
+                row.get(8)?, // parsed_embed
+                row.get(6)?, // deleted
+                row.get(7)?, // checked_old
             ))
         })?;
         extract_first_result(&mut rows)
@@ -408,7 +396,7 @@ impl DB {
         let mut stmt = conn.prepare(
             "SELECT 
                 L.id, L.link, S.id, C.id, M.id, M.created_at, C.name, 
-                S.name, M.author, M.parsed_repost, M.parsed_wordle, 
+                S.name, M.author, M.parsed_repost, 
                 M.deleted, M.checked_old, M.parsed_embed
             FROM link AS L 
             JOIN message_link as ML on ML.link=L.id
@@ -434,10 +422,9 @@ impl DB {
                     row.get(8)?,  // author
                     row.get(5)?,  // created_at
                     row.get(9)?,  // parsed_repost
-                    row.get(10)?, // parsed_wordle
-                    row.get(13)?, // parsed_embed
-                    row.get(11)?, // deleted
-                    row.get(12)?, // checked_old
+                    row.get(12)?, // parsed_embed
+                    row.get(10)?, // deleted
+                    row.get(11)?, // checked_old
                 ),
             })
         })?;
@@ -454,8 +441,8 @@ impl DB {
         let conn = self.conn.borrow();
         let mut stmt = conn.prepare(
             "SELECT 
-                MR.id, MR.server, MR.channel, MR.author, MR.created_at, MR.parsed_repost, 
-                MR.parsed_wordle, MR.deleted, MR.checked_old, MR.parsed_embed
+                MR.id, MR.server, MR.channel, MR.author, MR.created_at, 
+                MR.parsed_repost, MR.deleted, MR.checked_old, MR.parsed_embed
             FROM message_link AS ML
             JOIN message AS M ON ML.message=M.id
             JOIN channel AS C ON M.channel=C.id
@@ -478,10 +465,9 @@ impl DB {
                 row.get(3)?, // author
                 row.get(4)?, // created_at
                 row.get(5)?, // parsed_repost
-                row.get(6)?, // parsed_wordle
-                row.get(9)?, // parsed_embed
-                row.get(7)?, // deleted
-                row.get(8)?, // checked_old
+                row.get(8)?, // parsed_embed
+                row.get(6)?, // deleted
+                row.get(7)?, // checked_old
             ))
         })?;
         let mut posts = Vec::new();
@@ -501,8 +487,7 @@ impl DB {
 
         let mut stmt = conn.prepare(
             "SELECT M.id, M.server, M.channel, M.author, M.created_at, 
-            M.parsed_repost, M.parsed_wordle, M.deleted, M.checked_old, 
-            M.parsed_embed, I.hash
+            M.parsed_repost, M.deleted, M.checked_old, M.parsed_embed, I.hash
             FROM image as I
             JOIN message_image as MI on MI.image=I.id
             JOIN message as M on M.id=MI.message
@@ -542,12 +527,11 @@ impl DB {
                         row.get(3)?, // author
                         row.get(4)?, // created_at
                         row.get(5)?, // parsed_repost
-                        row.get(6)?, // parsed_wordle
-                        row.get(9)?, // parsed_embed
-                        row.get(7)?, // deleted
-                        row.get(8)?, // checked_old
+                        row.get(8)?, // parsed_embed
+                        row.get(6)?, // deleted
+                        row.get(7)?, // checked_old
                     ),
-                    row.get(10)?,
+                    row.get(9)?,
                 ))
             },
         )?;
@@ -634,91 +618,6 @@ impl DB {
         Ok(reposters)
     }
 
-    pub fn insert_wordle(&self, message_id: u64, wordle: &Wordle) -> Result<()> {
-        let conn = self.conn.borrow();
-        let mut stmt = conn.prepare(&format!(
-            "INSERT INTO wordle VALUES ({})
-            ON CONFLICT(message) DO NOTHING",
-            repeat_vars(4 + 5 * 6)
-        ))?;
-        /*
-        match stmt.execute(rusqlite::params_from_iter(
-            wordle.get_query_parts(message_id),
-        )) {
-            Ok(_) => Ok(()),
-            Err(why) => Err(Error::from(why)),
-        }*/
-
-        stmt.execute(rusqlite::params_from_iter(
-            wordle.get_query_parts(message_id),
-        ))?;
-
-        Ok(())
-    }
-    pub fn get_wordles_for_author(&self, author_id: u64, server_id: u64) -> Result<Vec<Wordle>> {
-        let conn = self.conn.borrow();
-        let mut stmt = conn.prepare(
-            "SELECT W.*, MIN(M.created_at)
-            FROM wordle as W 
-            JOIN message as M on W.message=M.id
-            WHERE M.author=(?1) AND 
-                M.server=(?2) AND
-                M.deleted IS NULL
-            GROUP BY W.number",
-        )?;
-
-        let rows = stmt.query_map([author_id, server_id], |row| {
-            let mut board: [[LetterStatus; 5]; 6] = Default::default();
-            for i in 0..30 {
-                board[i / 5][i % 5] = row.get(i + 4)?;
-            }
-            Ok(Wordle {
-                number: row.get(1)?,
-                score: row.get(2)?,
-                hardmode: row.get(3)?,
-                board: WordleBoard(board),
-            })
-        })?;
-
-        let mut wordles = Vec::new();
-        for wordle in rows {
-            wordles.push(wordle?)
-        }
-
-        Ok(wordles)
-    }
-
-    pub fn get_wordles_for_server(&self, server_id: u64) -> Result<Vec<Wordle>> {
-        let conn = self.conn.borrow();
-        let mut stmt = conn.prepare(
-            "SELECT W.*, MIN(M.created_at)
-            FROM wordle as W 
-            JOIN message as M on W.message=M.id
-            WHERE M.server=(?1) AND M.deleted IS NULL
-            GROUP BY M.author, W.number",
-        )?;
-
-        let rows = stmt.query_map([server_id], |row| {
-            let mut board: [[LetterStatus; 5]; 6] = Default::default();
-            for i in 0..30 {
-                board[i / 5][i % 5] = row.get(i + 4)?;
-            }
-            Ok(Wordle {
-                number: row.get(1)?,
-                score: row.get(2)?,
-                hardmode: row.get(3)?,
-                board: WordleBoard(board),
-            })
-        })?;
-
-        let mut wordles = Vec::new();
-        for wordle in rows {
-            wordles.push(wordle?)
-        }
-
-        Ok(wordles)
-    }
-
     pub fn add_reply(&self, message_id: u64, channel_id: u64, replied_id: u64) -> Result<()> {
         let conn = self.conn.borrow();
         let mut stmt = conn.prepare(
@@ -746,21 +645,5 @@ impl DB {
             },
         )
         .optional()
-    }
-}
-
-impl Wordle {
-    fn get_query_parts(&self, message_id: u64) -> Vec<Box<dyn ToSql>> {
-        let mut ret: Vec<Box<dyn ToSql>> = vec![
-            Box::new(message_id),
-            Box::new(self.number),
-            Box::new(self.score),
-            Box::new(self.hardmode),
-        ];
-
-        for element in self.board {
-            ret.push(Box::new(element));
-        }
-        ret
     }
 }
