@@ -225,7 +225,6 @@ impl DB {
             "UPDATE message 
             SET 
                 parsed_repost=datetime('now'), 
-                parsed_wordle=datetime('now'),
                 parsed_embed=datetime('now')
             WHERE id=(?1)",
             [*message_id.as_u64()],

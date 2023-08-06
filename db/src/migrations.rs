@@ -159,6 +159,12 @@ migration![
     "CREATE INDEX idx_reply ON reply (replied_to);"
 ];
 
+migration![
+    10,
+    "ALTER TABLE message DROP COLUMN parsed_wordle;",
+    "DROP TABLE wordle;"
+];
+
 fn delete_old_links(conn: &Connection) -> Result<()> {
     trace!("starting delete old links");
     conn.execute(
@@ -179,7 +185,7 @@ fn delete_old_links(conn: &Connection) -> Result<()> {
 pub fn migrate(conn: &mut Connection) -> Result<()> {
     const MIN_VER: u32 = 7;
     // be sure to increment this everytime a new migration is added
-    const FINAL_VER: u32 = 9;
+    const FINAL_VER: u32 = 10;
 
     let ver = queries::get_version(conn)?;
     info!("database version is currently: {ver} with target ver {FINAL_VER}");
@@ -206,6 +212,10 @@ pub fn migrate(conn: &mut Connection) -> Result<()> {
 
     if ver < 9 {
         migration_9(&tx)?;
+    }
+
+    if ver < 10 {
+        migration_10(&tx)?;
     }
     // delete old links we don't need
     delete_old_links(&tx)?;
