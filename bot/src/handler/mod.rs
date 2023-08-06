@@ -1,7 +1,6 @@
 mod commands;
 mod images;
 mod links;
-mod wordle;
 
 use crate::errors::{Error, Result};
 use crate::structs::reply::Reply;
@@ -174,9 +173,6 @@ async fn process_message<'a>(
             None
         }
     } else {
-        if !db_msg.is_wordle_parsed() {
-            wordle::check_wordle(msg);
-        }
         let mut repost_set = RepostSet::new();
         if !db_msg.is_embed_parsed() {
             repost_set.union(&ImageProcesser::from_message(msg)?.process(new).await?);

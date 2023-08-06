@@ -1,9 +1,7 @@
 [workspace]
 default-members = ["bot"]
-members = [
-    "bot",
-    "db",
-]
+members = ["bot", "db"]
+resolver = "2"
 
 [profile.release]
 opt-level = 3

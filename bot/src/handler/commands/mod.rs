@@ -1,5 +1,4 @@
 mod pins;
-mod wordle;
 
 use crate::errors::Result;
 use crate::structs::reply::{Reply, ReplyType};
@@ -64,8 +63,6 @@ pub async fn handle_command<'a>(ctx: &Context, msg: &'a Message) -> Option<Reply
         "pins" => pins::pins(ctx, msg).await,
         "reposts" => repost_cnt(msg),
         "reposters" => reposter_cnt(msg),
-        "wordle score" => wordle::wordle_score_user(ctx, msg).await,
-        "wordle server" => wordle::wordle_score_server(msg),
         _ => Ok(Reply::new_const(
             "Unrecognized command",
             ReplyType::Message(msg),
