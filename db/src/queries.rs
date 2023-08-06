@@ -10,7 +10,7 @@ pub fn get_version(conn: &Connection) -> Result<u32> {
 
 #[inline(always)]
 pub fn set_version(conn: &Connection, version: u32) -> Result<()> {
-    conn.pragma_update(None, "user_version", &version)
+    conn.pragma_update(None, "user_version", version)
 }
 
 #[inline(always)]

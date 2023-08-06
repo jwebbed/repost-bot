@@ -35,7 +35,7 @@ impl DB {
             Connection::open_in_memory()?
         } else {
             let path = "./repost.db3";
-            Connection::open(&path)?
+            Connection::open(path)?
         };
 
         Ok(db)
