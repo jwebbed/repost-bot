@@ -17,10 +17,9 @@ pub(super) fn has_command_prefix(command: &str) -> bool {
 }
 
 fn repost_cnt(msg: &Message) -> Result<Reply<'_>> {
-    let reposts = match DB::db_call(|db| db.get_repost_list(*msg.guild_id.unwrap().as_u64())) {
-        Ok(r) => r,
-        Err(_) => Vec::new(),
-    };
+    let reposts = 
+    DB::db_call(|db| db.get_repost_list(*msg.guild_id.unwrap().as_u64()))
+        .map_or_else(|_| Vec::new(), |r| r);
 
     let response = format!(
         "Count | Link\n{}",
@@ -35,10 +34,8 @@ fn repost_cnt(msg: &Message) -> Result<Reply<'_>> {
 }
 
 fn reposter_cnt(msg: &Message) -> Result<Reply<'_>> {
-    let reposters = match DB::db_call(|db| db.get_top_reposters(*msg.guild_id.unwrap().as_u64())) {
-        Ok(r) => r,
-        Err(_) => Vec::new(),
-    };
+    let reposters = DB::db_call(|db| db.get_top_reposters(*msg.guild_id.unwrap().as_u64()))
+        .map_or_else(|_| Vec::new(), |r| r);
 
     let response = format!(
         "Username | Count\n{}",

@@ -107,10 +107,7 @@ fn transform_url(url: Url) -> Result<Url> {
         None
     };
 
-    match ret {
-        Some(value) => Ok(value),
-        None => Ok(url),
-    }
+    Ok(ret.map_or(url, |value| value))
 }
 
 /// filtered_url takes a url_str and returns a Url object with the any irrelevent

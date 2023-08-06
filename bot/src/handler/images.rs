@@ -41,10 +41,7 @@ fn get_image_hash(bytes: &Vec<u8>) -> Result<Option<ImageHash>> {
 }
 
 async fn download_and_hash(url: &str, proxy_url: Option<&String>) -> Result<Option<ImageHash>> {
-    let req_url = match proxy_url {
-        Some(u) => u,
-        None => url,
-    };
+    let req_url = proxy_url.map_or(url, |u| u);
     let bytes = reqwest::get(req_url).await?.bytes().await?.to_vec();
     if !bytes.is_empty() {
         Ok(get_image_hash(&bytes)?)

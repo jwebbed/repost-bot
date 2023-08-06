@@ -125,16 +125,12 @@ async fn process_message_update<'a>(
         // we should reply if the message is recent, if it's an older message
         // being updated we'll leave it be
         let should_reply = db_msg.is_recent();
-        let attachments_default = vec![];
-        let attachments = match &event.attachments {
-            Some(r) => r,
-            None => &attachments_default,
-        };
+
         let embeds_default = vec![];
-        let embeds = match &event.embeds {
-            Some(r) => r,
-            None => &embeds_default,
-        };
+        let attachments_default = vec![];
+        
+        let embeds = event.embeds.as_ref().map_or(&embeds_default, |r| r);
+        let attachments = event.attachments.as_ref().map_or(&attachments_default, |r| r);
 
         let mut reposts = ImageProcesser::new(
             msg_id,
