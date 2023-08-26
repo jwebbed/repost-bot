@@ -2,19 +2,19 @@ use crate::structs::Message;
 use rusqlite::{Connection, OptionalExtension, Result};
 
 #[inline(always)]
-pub fn get_version(conn: &Connection) -> Result<u32> {
+pub(crate) fn get_version(conn: &Connection) -> Result<u32> {
     conn.query_row("SELECT user_version FROM pragma_user_version;", [], |row| {
         row.get(0)
     })
 }
 
 #[inline(always)]
-pub fn set_version(conn: &Connection, version: u32) -> Result<()> {
+pub(crate) fn set_version(conn: &Connection, version: u32) -> Result<()> {
     conn.pragma_update(None, "user_version", version)
 }
 
-#[inline(always)]
-pub fn get_message(conn: &Connection, msg_id: u64) -> Result<Option<Message>> {
+#[inline]
+pub(crate) fn get_message(conn: &Connection, msg_id: u64) -> Result<Option<Message>> {
     conn.query_row(
         "SELECT id, server, channel, author, created_at, 
         parsed_repost, deleted, checked_old, parsed_embed

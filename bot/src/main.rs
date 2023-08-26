@@ -18,11 +18,11 @@ use time::UtcOffset;
 use std::env;
 use std::process;
 
-use db::DB;
+use db::migrate;
 use handler::Handler;
 
 fn migrate_db() {
-    match DB::migrate() {
+    match migrate() {
         Ok(_) => info!("sucessfully loaded and migrated db"),
         Err(why) => {
             error!("Failed to migrate, exiting {why:?}");

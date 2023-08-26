@@ -6,6 +6,7 @@ use rusqlite::{Connection, Result};
 macro_rules! migration {
     ( $n:literal, $( $x:literal ),* ) => {
         paste::item! {
+            #[inline(always)]
             fn [< migration_$n >] (conn: &Connection) -> Result<()> {
                 trace!("running migration {}", $n);
 
@@ -182,7 +183,8 @@ fn delete_old_links(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-pub fn migrate(conn: &mut Connection) -> Result<()> {
+#[inline(always)]
+pub(crate) fn migrate(conn: &mut Connection) -> Result<()> {
     const MIN_VER: u32 = 7;
     // be sure to increment this everytime a new migration is added
     const FINAL_VER: u32 = 10;

@@ -2,8 +2,8 @@ mod pins;
 
 use crate::errors::Result;
 use crate::structs::reply::{Reply, ReplyType};
-use db::DB;
 
+use db::{read_only_db_call, ReadOnlyDb};
 use lazy_static::lazy_static;
 use log::warn;
 use regex::Regex;
@@ -17,8 +17,7 @@ pub(super) fn has_command_prefix(command: &str) -> bool {
 }
 
 fn repost_cnt(msg: &Message) -> Result<Reply<'_>> {
-    let reposts = 
-    DB::db_call(|db| db.get_repost_list(*msg.guild_id.unwrap().as_u64()))
+    let reposts = read_only_db_call(|db| db.get_repost_list(*msg.guild_id.unwrap().as_u64()))
         .map_or_else(|_| Vec::new(), |r| r);
 
     let response = format!(
@@ -34,7 +33,7 @@ fn repost_cnt(msg: &Message) -> Result<Reply<'_>> {
 }
 
 fn reposter_cnt(msg: &Message) -> Result<Reply<'_>> {
-    let reposters = DB::db_call(|db| db.get_top_reposters(*msg.guild_id.unwrap().as_u64()))
+    let reposters = read_only_db_call(|db| db.get_top_reposters(*msg.guild_id.unwrap().as_u64()))
         .map_or_else(|_| Vec::new(), |r| r);
 
     let response = format!(

@@ -6,7 +6,7 @@ use crate::errors::{Error, Result};
 use crate::structs::reply::Reply;
 use crate::structs::repost::RepostSet;
 
-use db::DB;
+use db::{get_read_only_db, get_writeable_db, writable_db_call, ReadOnlyDb, WriteableDb};
 use images::ImageProcesser;
 use log::{debug, error, info, trace, warn};
 use rand::seq::SliceRandom;
@@ -64,7 +64,7 @@ async fn process_discord_message(ctx: &Context, msg: &Message) -> Result<db::str
     }
     let now = Instant::now();
 
-    let db = DB::get_db()?;
+    let db = get_writeable_db()?;
 
     let author_id = *msg.author.id.as_u64();
     db.add_user(
@@ -108,7 +108,7 @@ async fn process_message_update<'a>(
         warn!("Received message update on msg_id {msg_id} with no guild_id, can't process");
         return Ok(None);
     }
-    let db_msg_maybe = DB::db_call(|db| db.get_message(event.id))?;
+    let db_msg_maybe = get_read_only_db()?.get_message(event.id)?;
     if db_msg_maybe.is_none() {
         warn!("Received message update on msg_id {msg_id} but haven't already processed message, can't process");
         return Ok(None);
@@ -128,9 +128,12 @@ async fn process_message_update<'a>(
 
         let embeds_default = vec![];
         let attachments_default = vec![];
-        
+
         let embeds = event.embeds.as_ref().map_or(&embeds_default, |r| r);
-        let attachments = event.attachments.as_ref().map_or(&attachments_default, |r| r);
+        let attachments = event
+            .attachments
+            .as_ref()
+            .map_or(&attachments_default, |r| r);
 
         let mut reposts = ImageProcesser::new(
             msg_id,
@@ -181,7 +184,7 @@ async fn process_message<'a>(
         repost_set.generate_reply_for_message(msg)
     };
 
-    DB::db_call(|db| db.mark_message_all_checked(msg.id))?;
+    get_writeable_db()?.mark_message_all_checked(msg.id)?;
 
     Ok(ret)
 }
@@ -193,7 +196,7 @@ async fn process_discord_message_slow(ctx: &Context, msg: &Message) -> Result<()
         .ok_or_else(|| Error::Internal("Guild id doesn't exist".to_string()))?;
 
     if let Some(nickname) = msg.author.nick_in(ctx, server_id).await {
-        let db = DB::get_db()?;
+        let db = get_writeable_db()?;
         db.add_nickname(*msg.author.id.as_u64(), *server_id.as_u64(), &nickname)?;
     }
 
@@ -202,7 +205,7 @@ async fn process_discord_message_slow(ctx: &Context, msg: &Message) -> Result<()
 
 async fn process_old_messages(ctx: &Context, server_id: &u64) -> Result<usize> {
     const LIMIT: u64 = 50;
-    let db = DB::get_db()?;
+    let db = get_read_only_db()?;
     let (channel_id, query, base_msg) = match db.get_newest_unchecked_message(*server_id)? {
         Some(msg) => (
             msg.channel,
@@ -225,6 +228,7 @@ async fn process_old_messages(ctx: &Context, server_id: &u64) -> Result<usize> {
     };
 
     let messages = ctx.http.get_messages(channel_id, &query).await?;
+    let db = get_writeable_db()?;
     if !messages.is_empty() {
         let len = messages.len();
         info!("received {len} messages for channel id: {channel_id} and query_string {query}");
@@ -241,7 +245,7 @@ async fn process_old_messages(ctx: &Context, server_id: &u64) -> Result<usize> {
                     }
                 }
             } else {
-                let db_msg_maybe = DB::db_call(|db| db.get_message(msg.id))?;
+                let db_msg_maybe = db.get_message(msg.id)?;
                 if msg.guild_id.is_none() {
                     msg.guild_id = Some(GuildId(*server_id));
                 }
@@ -252,7 +256,7 @@ async fn process_old_messages(ctx: &Context, server_id: &u64) -> Result<usize> {
                 if let Some(db_msg) = db_msg_maybe {
                     if !db_msg.is_deleted() && !db_msg.is_checked_old() {
                         // mark as checked old if we had this in the db before processing just now
-                        DB::db_call(|db| db.mark_message_checked_old(msg.id))?;
+                        db.mark_message_checked_old(msg.id)?;
                     }
                 } else {
                     debug!(
@@ -332,7 +336,7 @@ impl EventHandler for Handler {
         message_id: MessageId,
         _guild_id: Option<GuildId>,
     ) {
-        let db = match DB::get_db() {
+        let db = match get_writeable_db() {
             Ok(db) => db,
             Err(why) => {
                 error!("Error getting db: {why:?}");
@@ -356,7 +360,7 @@ impl EventHandler for Handler {
     async fn channel_create(&self, ctx: Context, channel: &GuildChannel) {
         let visible = bot_read_channel_permission(&ctx, channel).await;
         log_error(
-            DB::db_call(|db| {
+            writable_db_call(|db| {
                 db.update_channel(
                     *channel.id.as_u64(),
                     *channel.guild_id.as_u64(),
@@ -375,7 +379,7 @@ impl EventHandler for Handler {
                 let (id, name, server) = (channel.id, channel.name, *channel.guild_id.as_u64());
                 info!("received channel update for channel id {id} with name {name} in server {server}, visibility is now: {visible}");
                 log_error(
-                    DB::db_call(|db| db.update_channel_visibility(channel.id, visible)),
+                    writable_db_call(|db| db.update_channel_visibility(channel.id, visible)),
                     "Updating visibility",
                 );
             }
@@ -388,7 +392,7 @@ impl EventHandler for Handler {
     async fn channel_delete(&self, _ctx: Context, channel: &GuildChannel) {
         trace!("recieved channel delete for {channel:?}");
         log_error(
-            DB::db_call(|db| db.delete_channel(channel.id)),
+            writable_db_call(|db| db.delete_channel(channel.id)),
             "Db delete channel",
         );
     }
@@ -399,7 +403,7 @@ impl EventHandler for Handler {
         _old_if_available: Option<Member>,
         new: Member,
     ) {
-        let db = match DB::get_db() {
+        let db = match get_writeable_db() {
             Ok(db) => db,
             Err(why) => {
                 error!("Error getting db: {why:?}");
@@ -430,7 +434,7 @@ impl EventHandler for Handler {
     }
 
     async fn cache_ready(&self, ctx: Context, guilds: Vec<GuildId>) {
-        let db = match DB::get_db() {
+        let db = match get_writeable_db() {
             Ok(db) => db,
             Err(why) => {
                 error!("Error getting db: {why:?}");

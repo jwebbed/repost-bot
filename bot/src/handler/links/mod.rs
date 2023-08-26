@@ -1,12 +1,10 @@
 mod filter;
 
-use filter::filtered_url;
-
 use crate::errors::Result;
 use crate::structs::repost::{RepostSet, RepostType};
+use filter::filtered_url;
 
-use db::structs::Link;
-use db::DB;
+use db::{read_only_db_call, structs::Link, writable_db_call, ReadOnlyDb, WriteableDb};
 use lazy_static::lazy_static;
 use linkify::{LinkFinder, LinkKind};
 use log::{error, info};
@@ -15,7 +13,7 @@ use serenity::model::channel::Message;
 
 fn query_link_matches(url_str: &str, server: u64) -> Result<Vec<Link>> {
     let mut links = Vec::new();
-    for link in DB::db_call(|db| db.query_links(url_str, server))? {
+    for link in read_only_db_call(|db| db.query_links(url_str, server))? {
         links.push(link)
     }
     Ok(links)
@@ -68,7 +66,7 @@ pub fn store_links_and_get_reposts(msg: &Message, include_reply: bool) -> Result
         }
 
         // finally insert this link into db
-        DB::db_call(|db| db.insert_link(filtered_link.as_str(), *msg.id.as_u64()))?;
+        writable_db_call(|mut db| db.insert_link(filtered_link.as_str(), *msg.id.as_u64()))?;
     }
     // if include_reply false len should always be 0
     if reposts.len() > 0 {
@@ -79,7 +77,7 @@ pub fn store_links_and_get_reposts(msg: &Message, include_reply: bool) -> Result
 
 pub fn get_reposts_for_message_id(message_id: u64) -> Result<RepostSet> {
     Ok(RepostSet::new_from_messages(
-        &DB::db_call(|db| db.query_reposts_for_message(message_id))?,
+        &read_only_db_call(|db| db.query_reposts_for_message(message_id))?,
         RepostType::Link,
     ))
 }
