@@ -1,7 +1,7 @@
 use crate::errors::{Error, Result};
 use crate::structs::repost::{RepostSet, RepostType};
 
-use db::DB;
+use db::{get_read_only_db, writable_db_call, ReadOnlyDb, WriteableDb};
 use image::error::ImageError;
 use image::io::Reader;
 use log::{info, warn};
@@ -161,7 +161,7 @@ async fn store_images_direct<'a>(
             }
         }
     }
-    let db = DB::get_db()?;
+    let db = get_read_only_db()?;
     let mut reposts = RepostSet::new();
     for (hash, url) in hashes {
         if include_reply {
@@ -182,7 +182,7 @@ async fn store_images_direct<'a>(
                 }
             }
         }
-        DB::db_call(|db| db.insert_image(url, &hash.to_base64(), msg_id))?;
+        writable_db_call(|mut db| db.insert_image(url, &hash.to_base64(), msg_id))?;
     }
     Ok(reposts)
 }

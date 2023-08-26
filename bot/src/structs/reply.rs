@@ -1,6 +1,6 @@
 use crate::errors::{Error, Result};
 
-use db::DB;
+use db::{read_only_db_call, writable_db_call, ReadOnlyDb, WriteableDb};
 use log::info;
 use serde_json::json;
 use serenity::builder::ParseValue;
@@ -53,7 +53,7 @@ impl Reply<'_> {
                 channel.say(ctx, resp).await?;
             }
             ReplyType::Message(msg) => {
-                if let Some(db_reply) = DB::db_call(|db| db.get_reply(*msg.id.as_u64()))? {
+                if let Some(db_reply) = read_only_db_call(|db| db.get_reply(*msg.id.as_u64()))? {
                     edit_reply(ctx, &db_reply, resp).await?;
                 } else {
                     let reply = msg.reply(ctx, resp).await?;
@@ -61,7 +61,7 @@ impl Reply<'_> {
                 }
             }
             ReplyType::MessageId(msg_id, channel_id) => {
-                if let Some(db_reply) = DB::db_call(|db| db.get_reply(*msg_id.as_u64()))? {
+                if let Some(db_reply) = read_only_db_call(|db| db.get_reply(*msg_id.as_u64()))? {
                     edit_reply(ctx, &db_reply, resp).await?;
                 } else {
                     // The following code is essentially entirely copied from serenity (the library being used)
@@ -99,8 +99,7 @@ impl Reply<'_> {
             )),
         }?;
 
-        let db = DB::get_db()?;
-        db.add_reply(*reply_id.as_u64(), channel_id, replied_to)?;
+        writable_db_call(|db| db.add_reply(*reply_id.as_u64(), channel_id, replied_to))?;
         Ok(())
     }
 }
