@@ -15,6 +15,7 @@ use visual_hash::{HashAlg, HasherConfig, ImageHash};
 static IGNORED_PROVIDERS: phf::Set<&'static str> = phf_set! {
     "Tenor",
     "YouTube",
+    "Apple Music",
 };
 
 // Primarily a seperate function for testing purposes
