@@ -7,7 +7,7 @@ use image::io::Reader;
 use log::{info, warn};
 use phf::phf_set;
 use serenity::model::channel::{Attachment, Embed};
-use serenity::model::prelude::Message;
+use serenity::model::prelude::{EmbedThumbnail, Message};
 use std::io::Cursor;
 use std::time::Instant;
 use visual_hash::{HashAlg, HasherConfig, ImageHash};
@@ -98,6 +98,27 @@ impl ImageProcesser<'_> {
     }
 }
 
+fn get_provider_name(embed: &Embed) -> &str {
+    if let Some(provider) = &embed.provider {
+        if let Some(provider_name) = &provider.name {
+            return provider_name;
+        }
+    }
+    ""
+}
+
+/// Returns side length of embed if embed is square, otherwise none
+fn get_square_embed_dimension(embed: &EmbedThumbnail) -> Option<u64> {
+    // This if will pass even when both width and height are none, however
+    // if we added a check to ensure the option is some, the alternative is
+    // we'd just return None anyways so this works out to be the same result.
+    if embed.width == embed.height {
+        embed.width
+    } else {
+        None
+    }
+}
+
 async fn store_images_direct<'a>(
     msg_id: u64,
     server_id: u64,
@@ -140,15 +161,12 @@ async fn store_images_direct<'a>(
         info!("msg {msg_id} has {} embeds", embeds.len());
     }
     for embed in embeds {
-        if let Some(provider) = &embed.provider {
-            if let Some(provider_name) = &provider.name {
-                if IGNORED_PROVIDERS.contains(provider_name) {
-                    info!("provider {provider_name} is ignored, skipping this embed");
-                    continue;
-                }
-                info!("provider {provider_name} is not ignored, processing");
-            }
+        let provider_name = get_provider_name(embed);
+        if IGNORED_PROVIDERS.contains(provider_name) {
+            info!("provider {provider_name} is ignored, skipping this embed");
+            continue;
         }
+        info!("provider {provider_name} is not ignored, processing");
 
         if let Some(embedi) = &embed.image {
             info!("msg {msg_id} found image embed");
@@ -157,6 +175,24 @@ async fn store_images_direct<'a>(
             }
         } else if let Some(embedi) = &embed.thumbnail {
             info!("msg {msg_id} found thumbnail embed");
+
+            // Experimentally it seems that, with threads, all profile images are of article "link" and other images are
+            // of kind "article". This may exclude some embeds that are valid reposts, but that seems unlikely.
+            if embed
+                .kind
+                .as_ref()
+                .map(|kind| kind == "link")
+                .unwrap_or(true)
+                && provider_name == "Threads"
+            {
+                if let Some(dimension) = get_square_embed_dimension(embedi) {
+                    if dimension <= 640 {
+                        info!("Found threads thumbnail that is square with side length <= 640 ({dimension}) and of kind \"link\" this is likely a user profile image, ignoring.");
+                        continue;
+                    }
+                }
+            }
+
             if let Some(hash) = download_and_hash(&embedi.url, embedi.proxy_url.as_ref()).await? {
                 hashes.push((hash, &embedi.url));
             }
