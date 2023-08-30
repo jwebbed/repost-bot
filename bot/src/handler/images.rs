@@ -64,8 +64,6 @@ impl ImageProcesser<'_> {
     }
 }
 
-
-
 async fn store_images_direct<'a>(
     msg_id: u64,
     server_id: u64,

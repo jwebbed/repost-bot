@@ -3,9 +3,10 @@ use crate::structs::reply::{Reply, ReplyType};
 use chrono::{DateTime, Utc};
 use db::structs::Message;
 use humantime::format_duration;
+use itertools::Itertools;
 use log::info;
 use serenity::model;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::vec::Vec;
 
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
@@ -16,14 +17,14 @@ pub enum RepostType {
 
 #[derive(Debug)]
 pub struct RepostSet {
-    reposts: HashMap<Message, HashSet<RepostType>>,
+    reposts: BTreeMap<Message, HashSet<RepostType>>,
     types: HashSet<RepostType>,
 }
 
 impl RepostSet {
     pub fn new() -> RepostSet {
         RepostSet {
-            reposts: HashMap::new(),
+            reposts: BTreeMap::new(),
             types: HashSet::new(),
         }
     }
@@ -90,23 +91,17 @@ impl RepostSet {
                 Some(format!("🚨 {prefix} 🚨 REPOST 🚨 {link_text}"))
             }
             _ => {
-                let mut msgs_mut: Vec<Message> = self.reposts.clone().into_keys().collect();
-                msgs_mut.sort_by(|a, b| a.created_at.cmp(&b.created_at));
-                let msgs = msgs_mut;
-
-                let lines = msgs
+                let lines = self
+                    .reposts
                     .iter()
-                    .map(|x| {
-                        let text = repost_text(x, reply_to_created_at);
+                    .map(|(repost_msg, repost_types)| {
+                        let text = repost_text(repost_msg, reply_to_created_at);
                         if self.types.len() > 1 {
-                            // should never panic since this is literally just an iter of the sorted keys
-                            let thing = self.reposts.get(x).unwrap();
-                            format!("{} {text}", prefix_text(thing, false))
+                            format!("{} {text}", prefix_text(repost_types, false))
                         } else {
                             text
                         }
                     })
-                    .collect::<Vec<String>>()
                     .join("\n");
 
                 let header_prefix = format!("{} 🚨 ", prefix_text(&self.types, true));
