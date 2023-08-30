@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use log::debug;
 use serenity::model::id::{ChannelId, GuildId, MessageId};
-use std::hash::{Hash, Hasher};
+use std::cmp::Ordering;
 use std::time::Duration;
 
 #[derive(Debug, Copy, Clone)]
@@ -109,9 +109,15 @@ impl Message {
     }
 }
 
-impl Hash for Message {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.id.hash(state);
+impl Ord for Message {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.id.cmp(&other.id)
+    }
+}
+
+impl PartialOrd for Message {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -120,6 +126,7 @@ impl PartialEq for Message {
         self.id == other.id
     }
 }
+
 impl Eq for Message {}
 
 #[cfg(test)]
