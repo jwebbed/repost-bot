@@ -18,40 +18,6 @@ static IGNORED_PROVIDERS: phf::Set<&'static str> = phf_set! {
     "Apple Music",
 };
 
-// Primarily a seperate function for testing purposes
-fn hash_img(image: &image::DynamicImage) -> ImageHash {
-    HasherConfig::new()
-        .hash_alg(HashAlg::Gradient)
-        .hash_size(16, 16)
-        .to_hasher()
-        .hash_image(image)
-}
-
-fn get_image_hash(bytes: &Vec<u8>) -> Result<Option<ImageHash>> {
-    let image = Reader::new(Cursor::new(bytes))
-        .with_guessed_format()?
-        .decode();
-    // decoding error we likely can't do anything about, should just log and ignore
-    if let Err(err) = &image {
-        if let ImageError::Decoding(_) = err {
-            warn!("decoding error occured, skipping {err:?}");
-            return Ok(None);
-        }
-    }
-    Ok(Some(hash_img(&image?)))
-}
-
-async fn download_and_hash(url: &str, proxy_url: Option<&String>) -> Result<Option<ImageHash>> {
-    let req_url = proxy_url.map_or(url, |u| u);
-    let bytes = reqwest::get(req_url).await?.bytes().await?.to_vec();
-    if !bytes.is_empty() {
-        Ok(get_image_hash(&bytes)?)
-    } else {
-        info!("received url with 0 bytes, can't process");
-        Ok(None)
-    }
-}
-
 #[derive(Debug)]
 pub struct ImageProcesser<'a> {
     msg_id: u64,
@@ -98,26 +64,7 @@ impl ImageProcesser<'_> {
     }
 }
 
-fn get_provider_name(embed: &Embed) -> &str {
-    if let Some(provider) = &embed.provider {
-        if let Some(provider_name) = &provider.name {
-            return provider_name;
-        }
-    }
-    ""
-}
 
-/// Returns side length of embed if embed is square, otherwise none
-fn get_square_embed_dimension(embed: &EmbedThumbnail) -> Option<u64> {
-    // This if will pass even when both width and height are none, however
-    // if we added a check to ensure the option is some, the alternative is
-    // we'd just return None anyways so this works out to be the same result.
-    if embed.width == embed.height {
-        embed.width
-    } else {
-        None
-    }
-}
 
 async fn store_images_direct<'a>(
     msg_id: u64,
@@ -222,6 +169,61 @@ async fn store_images_direct<'a>(
         writable_db_call(|mut db| db.insert_image(url, &hash.to_base64(), msg_id))?;
     }
     Ok(reposts)
+}
+
+// Primarily a seperate function for testing purposes
+fn hash_img(image: &image::DynamicImage) -> ImageHash {
+    HasherConfig::new()
+        .hash_alg(HashAlg::Gradient)
+        .hash_size(16, 16)
+        .to_hasher()
+        .hash_image(image)
+}
+
+fn get_image_hash(bytes: &Vec<u8>) -> Result<Option<ImageHash>> {
+    let image = Reader::new(Cursor::new(bytes))
+        .with_guessed_format()?
+        .decode();
+    // decoding error we likely can't do anything about, should just log and ignore
+    if let Err(err) = &image {
+        if let ImageError::Decoding(_) = err {
+            warn!("decoding error occured, skipping {err:?}");
+            return Ok(None);
+        }
+    }
+    Ok(Some(hash_img(&image?)))
+}
+
+async fn download_and_hash(url: &str, proxy_url: Option<&String>) -> Result<Option<ImageHash>> {
+    let req_url = proxy_url.map_or(url, |u| u);
+    let bytes = reqwest::get(req_url).await?.bytes().await?.to_vec();
+    if !bytes.is_empty() {
+        Ok(get_image_hash(&bytes)?)
+    } else {
+        info!("received url with 0 bytes, can't process");
+        Ok(None)
+    }
+}
+
+fn get_provider_name(embed: &Embed) -> &str {
+    if let Some(provider) = &embed.provider {
+        if let Some(provider_name) = &provider.name {
+            return provider_name;
+        }
+    }
+    ""
+}
+
+/// Returns side length of embed if embed is square, otherwise none
+fn get_square_embed_dimension(embed: &EmbedThumbnail) -> Option<u64> {
+    // This if will pass even when both width and height are none, however
+    // if we added a check to ensure the option is some, the alternative is
+    // we'd just return None anyways so this works out to be the same result.
+    if embed.width == embed.height {
+        embed.width
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
