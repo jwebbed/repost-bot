@@ -4,7 +4,7 @@ use crate::structs::Message;
 use crate::ReadOnlyDb;
 
 use log::{debug, info, warn};
-use rusqlite::{params, Error, Result};
+use rusqlite::{Error, Result};
 use serenity::model::id::{ChannelId, MessageId};
 
 pub trait WriteableDb: GetConnectionMutable + ReadOnlyDb {
@@ -17,8 +17,8 @@ pub trait WriteableDb: GetConnectionMutable + ReadOnlyDb {
         )?;
 
         let count = match name {
-            Some(n) => stmt.execute(params![server_id, n]),
-            None => stmt.execute(params![server_id, rusqlite::types::Null]),
+            Some(n) => stmt.execute((server_id, n)),
+            None => stmt.execute((server_id, rusqlite::types::Null)),
         }?;
 
         if count > 0 {
@@ -52,13 +52,13 @@ pub trait WriteableDb: GetConnectionMutable + ReadOnlyDb {
         )?;
 
         let msg_id64 = *message_id.as_u64();
-        stmt.execute(params![
+        stmt.execute((
             msg_id64,
             server_id,
             channel_id,
             *message_id.created_at(),
             author_id
-        ])?;
+        ))?;
 
         match queries::get_message(conn, msg_id64)? {
             Some(msg) => Ok(msg),
@@ -86,7 +86,7 @@ pub trait WriteableDb: GetConnectionMutable + ReadOnlyDb {
             )",
         )?;
 
-        stmt.execute(params![user_id, username, bot, discriminator])?;
+        stmt.execute((user_id, username, bot, discriminator))?;
 
         Ok(())
     }
@@ -98,7 +98,7 @@ pub trait WriteableDb: GetConnectionMutable + ReadOnlyDb {
             VALUES ( ?1, ?2, ?3 )",
         )?;
 
-        stmt.execute(params![user_id, server_id, nickname])?;
+        stmt.execute((user_id, server_id, nickname))?;
 
         Ok(())
     }
@@ -166,7 +166,7 @@ pub trait WriteableDb: GetConnectionMutable + ReadOnlyDb {
             )",
         )?;
 
-        match stmt.execute(params![channel_id, name, server_id, visible]) {
+        match stmt.execute((channel_id, name, server_id, visible)) {
             Ok(cnt) => {
                 if cnt > 0 {
                     debug!(
@@ -185,7 +185,7 @@ pub trait WriteableDb: GetConnectionMutable + ReadOnlyDb {
     fn update_channel_visibility(&self, channel_id: ChannelId, visible: bool) -> Result<()> {
         self.execute(
             "UPDATE channel SET visible = (?1) WHERE id = (?2)",
-            params![visible, *channel_id.as_u64()],
+            (visible, *channel_id.as_u64()),
         )
     }
 
@@ -193,7 +193,7 @@ pub trait WriteableDb: GetConnectionMutable + ReadOnlyDb {
     fn delete_channel(&self, channel_id: ChannelId) -> Result<()> {
         self.execute(
             "DELETE FROM channel WHERE id = (?1)",
-            params![*channel_id.as_u64()],
+            [*channel_id.as_u64()],
         )
     }
 
@@ -213,7 +213,7 @@ pub trait WriteableDb: GetConnectionMutable + ReadOnlyDb {
                 (SELECT id FROM link WHERE link=(?1)), 
                 ?2
             );",
-            params![link, message_id],
+            (link, message_id),
         )?;
 
         tx.commit()?;
@@ -232,7 +232,7 @@ pub trait WriteableDb: GetConnectionMutable + ReadOnlyDb {
             "INSERT INTO image (c1, c2, c3, c4, c5, hash, url) 
             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
             ON CONFLICT(url) DO NOTHING;",
-            params![
+            (
                 String::from(chars.next().unwrap()),
                 String::from(chars.nth(1).unwrap()),
                 String::from(chars.nth(2).unwrap()),
@@ -240,7 +240,7 @@ pub trait WriteableDb: GetConnectionMutable + ReadOnlyDb {
                 String::from(chars.nth(4).unwrap()),
                 hash,
                 url
-            ],
+            ),
         )?;
 
         tx.execute(
@@ -249,7 +249,7 @@ pub trait WriteableDb: GetConnectionMutable + ReadOnlyDb {
                 (SELECT id FROM image WHERE url=(?1)),
                 ?2
             );",
-            params![url, message_id],
+            (url, message_id),
         )?;
 
         tx.commit()?;
@@ -265,7 +265,7 @@ pub trait WriteableDb: GetConnectionMutable + ReadOnlyDb {
             ON CONFLICT(id) DO NOTHING",
         )?;
 
-        stmt.execute(params![message_id, channel_id, replied_id])?;
+        stmt.execute([message_id, channel_id, replied_id])?;
         Ok(())
     }
 }
