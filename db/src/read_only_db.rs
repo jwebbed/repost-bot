@@ -2,7 +2,7 @@ use crate::connections::GetConnectionImmutable;
 use crate::queries;
 use crate::structs::{Channel, Link, Message, Reply, RepostCount, ReposterCount};
 
-use rusqlite::{params, OptionalExtension, Result, Row};
+use rusqlite::{OptionalExtension, Result, Row};
 use serenity::model::id::{ChannelId, GuildId, MessageId};
 
 #[inline(always)]
@@ -86,7 +86,7 @@ pub trait ReadOnlyDb: GetConnectionImmutable {
         let mut stmt = self
             .get_connection()
             .prepare("SELECT id, name FROM channel where server = (?1)")?;
-        let rows = stmt.query_map(params![*server_id.as_u64()], |row| {
+        let rows = stmt.query_map([*server_id.as_u64()], |row| {
             Ok((ChannelId(row.get(0)?), row.get(1)?))
         })?;
         let mut links = Vec::new();
@@ -115,7 +115,7 @@ pub trait ReadOnlyDb: GetConnectionImmutable {
                 AND C.visible = TRUE
                 AND M.deleted IS NULL;",
         )?;
-        let rows = stmt.query_map(params![link, server], |row| {
+        let rows = stmt.query_map((link, server), |row| {
             Ok(Link {
                 id: row.get(0)?,
                 link: row.get(1)?,
@@ -164,7 +164,7 @@ pub trait ReadOnlyDb: GetConnectionImmutable {
                 AND ML.id != MLR.id
                 AND MR.created_at < M.created_at",
         )?;
-        let rows = stmt.query_map(params![message_id], |row| {
+        let rows = stmt.query_map([message_id], |row| {
             Ok(Message::new(
                 row.get(0)?, // id
                 row.get(1)?, // server
@@ -214,9 +214,10 @@ pub trait ReadOnlyDb: GetConnectionImmutable {
             AND C.visible = TRUE
             AND M.deleted IS NULL",
         )?;
+        assert!(hash.len() >= 5);
         let mut chars = hash.chars();
         let rows = stmt.query_map(
-            params![
+            (
                 String::from(chars.next().unwrap()),
                 String::from(chars.nth(1).unwrap()),
                 String::from(chars.nth(2).unwrap()),
@@ -225,7 +226,7 @@ pub trait ReadOnlyDb: GetConnectionImmutable {
                 hash,
                 server,
                 current_msg_id
-            ],
+            ),
             |row: &Row<'_>| -> rusqlite::Result<(Message, String)> {
                 Ok((
                     Message::new(
@@ -275,7 +276,7 @@ pub trait ReadOnlyDb: GetConnectionImmutable {
             LIMIT 10",
         )?;
 
-        let rows = stmt.query_map(params![server_id], |row| {
+        let rows = stmt.query_map([server_id], |row| {
             Ok(RepostCount {
                 link: row.get(0)?,
                 count: row.get(1)?,
@@ -313,7 +314,7 @@ pub trait ReadOnlyDb: GetConnectionImmutable {
             ORDER BY cnt desc",
         )?;
 
-        let rows = stmt.query_map(params![server_id], |row| {
+        let rows = stmt.query_map([server_id], |row| {
             Ok(ReposterCount {
                 username: row.get(0)?,
                 count: row.get(1)?,
