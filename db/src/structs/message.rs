@@ -110,18 +110,21 @@ impl Message {
 }
 
 impl Ord for Message {
+    #[inline]
     fn cmp(&self, other: &Self) -> Ordering {
         self.id.cmp(&other.id)
     }
 }
 
 impl PartialOrd for Message {
+    #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl PartialEq for Message {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
