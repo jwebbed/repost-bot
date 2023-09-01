@@ -24,7 +24,7 @@ pub struct Message {
 
 impl Message {
     #[allow(clippy::too_many_arguments)]
-    #[inline]
+    #[inline(always)]
     pub const fn new(
         id: u64,
         server: u64,
@@ -51,22 +51,22 @@ impl Message {
 
     /// Returns a URI that references the message in discord. When clicked inside a
     /// discord client it will auto scroll to the message
-    #[inline]
+    #[inline(always)]
     pub fn uri(&self) -> String {
         MessageId(self.id).link(ChannelId(self.channel), Some(GuildId(self.server)))
     }
 
-    #[inline]
+    #[inline(always)]
     pub const fn is_repost_parsed(&self) -> bool {
         self.parsed_repost.is_some()
     }
 
-    #[inline]
+    #[inline(always)]
     pub const fn is_embed_parsed(&self) -> bool {
         self.parsed_embed.is_some()
     }
 
-    #[inline]
+    #[inline(always)]
     pub const fn is_deleted(&self) -> bool {
         self.deleted.is_some()
     }
@@ -80,7 +80,7 @@ impl Message {
     /// messages should return false. If possible to determine that not all
     /// messages need to be checked, only the messages that need to be checked
     /// should start returning false to reduce backlog.
-    #[inline]
+    #[inline(always)]
     pub const fn is_checked_old(&self) -> bool {
         self.checked_old.is_some()
     }
