@@ -47,9 +47,6 @@ async fn main() {
     // migrate the db
     migrate_db();
 
-    // init for tokio metrics
-    console_subscriber::init();
-
     let intents = GatewayIntents::GUILDS
         .union(GatewayIntents::GUILD_MEMBERS)
         .union(GatewayIntents::GUILD_MESSAGES)
