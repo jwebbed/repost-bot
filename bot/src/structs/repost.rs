@@ -6,7 +6,8 @@ use humantime::format_duration;
 use itertools::Itertools;
 use log::info;
 use serenity::model;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
+use std::vec::Vec;
 
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
 pub enum RepostType {
@@ -14,23 +15,17 @@ pub enum RepostType {
     Image,
 }
 
-#[derive(Default, Debug)]
-struct RepostTypeSet {
-    has_link: bool,
-    has_image: bool,
-}
-
 #[derive(Debug)]
 pub struct RepostSet {
-    reposts: BTreeMap<Message, RepostTypeSet>,
-    types: RepostTypeSet,
+    reposts: BTreeMap<Message, HashSet<RepostType>>,
+    types: HashSet<RepostType>,
 }
 
 impl RepostSet {
     pub fn new() -> RepostSet {
         RepostSet {
             reposts: BTreeMap::new(),
-            types: RepostTypeSet::new(),
+            types: HashSet::new(),
         }
     }
 
@@ -38,28 +33,27 @@ impl RepostSet {
         RepostSet {
             reposts: messages
                 .iter()
-                .map(|m| (*m, RepostTypeSet::with_type(repost_type)))
+                .map(|m| (*m, HashSet::from([repost_type])))
                 .collect(),
-            types: RepostTypeSet::with_type(repost_type),
+            types: HashSet::from([repost_type]),
         }
     }
 
     pub fn add(&mut self, msg: Message, repost_type: RepostType) {
         self.reposts
             .entry(msg)
-            .or_insert_with(RepostTypeSet::new)
-            .add(repost_type);
-        self.types.add(repost_type);
+            .or_insert_with(HashSet::new)
+            .insert(repost_type);
+        self.types.insert(repost_type);
     }
 
     pub fn union(&mut self, other: &RepostSet) {
+        // Should clean this up, can probably do it with some clever maps
         for (msg, repost_types) in &other.reposts {
-            self.reposts
-                .entry(*msg)
-                .or_insert_with(RepostTypeSet::new)
-                .union(repost_types);
+            for repost_type in repost_types {
+                self.add(*msg, *repost_type);
+            }
         }
-        self.types.union(&other.types);
     }
 
     pub fn len(&self) -> usize {
@@ -92,7 +86,7 @@ impl RepostSet {
             0 => None,
             1 => {
                 let (msg, rtypes) = self.reposts.iter().next().unwrap();
-                let prefix = rtypes.prefix_text(true);
+                let prefix = prefix_text(rtypes, true);
                 let link_text = repost_text(msg, reply_to_created_at);
                 Some(format!("🚨 {prefix} 🚨 REPOST 🚨 {link_text}"))
             }
@@ -102,95 +96,53 @@ impl RepostSet {
                     .iter()
                     .map(|(repost_msg, repost_types)| {
                         let text = repost_text(repost_msg, reply_to_created_at);
-                        if self.types.multiple_type() {
-                            format!("{} {text}", repost_types.prefix_text(false))
+                        if self.types.len() > 1 {
+                            format!("{} {text}", prefix_text(repost_types, false))
                         } else {
                             text
                         }
                     })
                     .join("\n");
 
-                let header_prefix = format!("{} 🚨 ", &self.types.prefix_text(true));
+                let header_prefix = format!("{} 🚨 ", prefix_text(&self.types, true));
                 Some(format!("🚨 {}REPOST 🚨\n{}", header_prefix, lines))
             }
         }
     }
 }
 
-impl RepostTypeSet {
-    #[inline(always)]
-    fn new() -> RepostTypeSet {
-        Default::default()
-    }
-
-    #[inline(always)]
-    fn with_type(repost_type: RepostType) -> RepostTypeSet {
-        let mut ret: RepostTypeSet = Default::default();
-        ret.add(repost_type);
-        ret
-    }
-
-    #[inline(always)]
-    fn add(&mut self, repost_type: RepostType) {
-        match repost_type {
-            RepostType::Link => self.has_link = true,
-            RepostType::Image => self.has_image = true,
-        }
-    }
-
-    #[inline(always)]
-    fn union(&mut self, other: &RepostTypeSet) {
-        self.has_link |= other.has_link;
-        self.has_image |= other.has_image;
-    }
-
-    #[inline(always)]
-    const fn multiple_type(&self) -> bool {
-        self.has_image && self.has_link
-    }
-
-    #[inline]
-    fn prefix_text(&self, long_text: bool) -> String {
-        if self.has_link && self.has_image {
-            let sep = if long_text { "/" } else { "" };
-            [RepostType::Image, RepostType::Link]
-                .iter()
-                .map(|t| t.get_text(long_text))
-                .join(sep)
-        } else {
-            let single_type = if self.has_link {
-                RepostType::Link
-            } else {
-                RepostType::Image
-            };
-            single_type.get_text(long_text).to_string()
-        }
-    }
-}
-
 impl RepostType {
-    #[inline]
-    const fn get_text(&self, long_text: bool) -> &str {
-        if long_text {
-            self.text_long()
-        } else {
-            self.text_short()
-        }
-    }
-
-    #[inline]
     const fn text_long(&self) -> &str {
         match self {
             RepostType::Link => "LINK",
             RepostType::Image => "IMAGE",
         }
     }
-    #[inline]
+
     const fn text_short(&self) -> &str {
         match self {
             RepostType::Link => "🔗",
             RepostType::Image => "🖼️",
         }
+    }
+}
+
+fn prefix_text(repost_types: &HashSet<RepostType>, long_text: bool) -> String {
+    let mut labels: Vec<&str> = repost_types
+        .iter()
+        .map(|t| {
+            if long_text {
+                t.text_long()
+            } else {
+                t.text_short()
+            }
+        })
+        .collect();
+    labels.sort_unstable();
+    if long_text {
+        labels.join("/")
+    } else {
+        labels.join("")
     }
 }
 
@@ -377,7 +329,7 @@ mod tests {
             Some(
                 "🚨 IMAGE/LINK 🚨 REPOST 🚨\n\
             🖼️ 2h https://discord.com/channels/1/1/1\n\
-            🖼️🔗 1h https://discord.com/channels/1/1/2"
+            🔗🖼️ 1h https://discord.com/channels/1/1/2"
                     .to_string()
             ),
             reply_str

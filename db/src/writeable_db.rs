@@ -57,7 +57,7 @@ pub trait WriteableDb: GetConnectionMutable + ReadOnlyDb {
             server_id,
             channel_id,
             *message_id.created_at(),
-            author_id,
+            author_id
         ))?;
 
         match queries::get_message(conn, msg_id64)? {
@@ -239,7 +239,7 @@ pub trait WriteableDb: GetConnectionMutable + ReadOnlyDb {
                 String::from(chars.nth(3).unwrap()),
                 String::from(chars.nth(4).unwrap()),
                 hash,
-                url,
+                url
             ),
         )?;
 

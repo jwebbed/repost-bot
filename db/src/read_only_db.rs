@@ -225,7 +225,7 @@ pub trait ReadOnlyDb: GetConnectionImmutable {
                 String::from(chars.nth(4).unwrap()),
                 hash,
                 server,
-                current_msg_id,
+                current_msg_id
             ),
             |row: &Row<'_>| -> rusqlite::Result<(Message, String)> {
                 Ok((
