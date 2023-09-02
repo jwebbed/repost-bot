@@ -305,7 +305,10 @@ impl EventHandler for Handler {
                     error!("message: failed process discord messages slow with error: {why:?}");
                 }
             }
-            Err(why) => error!("message: failed to process messsage: {why:?}"),
+            Err(why) => match why {
+                Error::BotMessage => debug!("Skipped processing bot message"),
+                _ => error!("message: failed to process messsage: {why:?}"),
+            },
         }
     }
 
