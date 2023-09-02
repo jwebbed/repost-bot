@@ -1,6 +1,7 @@
 mod commands;
 mod images;
 mod links;
+mod metadata_cache;
 
 use crate::errors::{Error, Result};
 use crate::structs::reply::Reply;
@@ -67,7 +68,7 @@ async fn process_discord_message(ctx: &Context, msg: &Message) -> Result<db::str
     let db = get_writeable_db()?;
 
     let author_id = *msg.author.id.as_u64();
-    db.add_user(
+    metadata_cache::update_author(
         author_id,
         &msg.author.name,
         msg.author.bot,
@@ -89,7 +90,7 @@ async fn process_discord_message(ctx: &Context, msg: &Message) -> Result<db::str
 
     let ret = db.add_message(msg.id, channel_id, server_id, author_id)?;
 
-    trace!(
+    debug!(
         "process_discord_message time elapsed: {:.2?}",
         now.elapsed()
     );
