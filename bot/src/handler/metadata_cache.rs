@@ -17,7 +17,11 @@ const AUTHOR_TTL: i64 = 60 * 60 * 3; // 3h
 const SERVER_TTL: i64 = 60 * 60 * 24; // 24h
 const CHANNEL_TTL: i64 = 60 * 60 * 6; // 9h
 
-#[inline(always)]
+
+struct MetadataProcessor {
+
+}
+
 fn check_cache(cache: &RwLock<BTreeMap<u64, DateTime<Utc>>>, id: u64, ttl: i64) -> Result<bool> {
     match cache.read() {
         Ok(cache) => Ok(cache.get(&id).map_or(false, |last_updated| {
@@ -30,7 +34,6 @@ fn check_cache(cache: &RwLock<BTreeMap<u64, DateTime<Utc>>>, id: u64, ttl: i64) 
     }
 }
 
-#[inline(always)]
 fn update_cache(
     cache: &RwLock<BTreeMap<u64, DateTime<Utc>>>,
     id: u64,

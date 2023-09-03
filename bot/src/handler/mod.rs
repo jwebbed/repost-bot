@@ -56,7 +56,7 @@ pub async fn bot_read_channel_permission(cache: impl AsRef<Cache>, channel: &Gui
 
 /// takes the message from discord, stores it, and returns the db struct for further processing
 #[inline(never)]
-async fn process_discord_message(ctx: &Context, msg: &Message) -> Result<db::structs::Message> {
+fn process_discord_message(ctx: &Context, msg: &Message) -> Result<db::structs::Message> {
     if msg.author.bot {
         return Err(Error::BotMessage);
     }
@@ -69,31 +69,31 @@ async fn process_discord_message(ctx: &Context, msg: &Message) -> Result<db::str
     let db = get_writeable_db()?;
 
 
-    debug!("get db elapsed: {:.2?}", start.elapsed());
+  //  debug!("get db elapsed: {:.2?}", start.elapsed());
 
     let author_id = *msg.author.id.as_u64();
-    metadata_cache::update_author(
+   /*  metadata_cache::update_author(
         &db,
         author_id,
         &msg.author.name,
         msg.author.bot,
         msg.author.discriminator,
-    )?;
+    )?;*/
 
     let server = msg
         .guild_id
         .ok_or(Error::ConstStr("Guild id doesn't exist on message"))?;
     let server_id = *server.as_u64();
-    let server_name = &server.name(ctx);
-    metadata_cache::update_server(&db, server_id, server_name)?;
+   // let server_name = &server.name(ctx);
+  // metadata_cache::update_server(&db, server_id, server_name)?;
 
     // get channel id and load message
     let channel_id = *msg.channel_id.as_u64();
-    let channel_name = msg.channel_id.name(&ctx.cache).await;
+    //let channel_name = msg.channel_id.name(&ctx.cache).await;
     // we can assume channel is visible if we are receiving messages for it
-    metadata_cache::update_channel(&db, channel_id, server_id, &channel_name.unwrap(), true)?;
+    //metadata_cache::update_channel(&db, channel_id, server_id, "fake name", true)?;
 
-    debug!("metadata cache elapsed: {:.2?}", start.elapsed());
+    //debug!("metadata cache elapsed: {:.2?}", start.elapsed());
 
 
     let ret = db.add_message(msg.id, channel_id, server_id, author_id)?;
@@ -172,7 +172,7 @@ async fn process_message<'a>(
     new: bool,
 ) -> Result<Option<Reply<'a>>> {
     // need to do this first, also does validation
-    let db_msg = process_discord_message(ctx, msg).await?;
+    let db_msg = process_discord_message(ctx, msg)?;//.await?;
 
     let ret = if commands::has_command_prefix(&msg.content) {
         if new {
@@ -471,7 +471,7 @@ impl EventHandler for Handler {
                             if val == 0 {
                                 10 * 60
                             } else {
-                                45
+                                10
                             }
                         }
                         Err(why) => {

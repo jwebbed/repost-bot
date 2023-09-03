@@ -14,3 +14,7 @@ split-debuginfo = "unpacked"
 [profile.dev.package]
 image = { opt-level = 3 } 
 visual-hash = { opt-level = 3 } 
+
+[profile.release.package]
+image = { opt-level = 3 } 
+visual-hash = { opt-level = 3 } 

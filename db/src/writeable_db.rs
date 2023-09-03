@@ -5,6 +5,8 @@ use crate::ReadOnlyDb;
 
 use log::{debug, info, warn};
 use rusqlite::{Error, Result};
+use std::time::{Duration, Instant};
+
 use serenity::model::id::{ChannelId, MessageId};
 
 pub trait WriteableDb: GetConnectionMutable + ReadOnlyDb {
@@ -43,13 +45,31 @@ pub trait WriteableDb: GetConnectionMutable + ReadOnlyDb {
         server_id: u64,
         author_id: u64,
     ) -> Result<Message> {
+        let now: Instant = Instant::now();
+
         let conn = self.get_connection();
+
+        debug!(
+            "add_message - get conn: {:.2?}",
+            now.elapsed()
+        );
+
+        let now: Instant = Instant::now();
+
+
         let mut stmt = conn.prepare(
             "INSERT INTO message (id, server, channel, created_at, author) 
             VALUES ( ?1, ?2, ?3, ?4, ?5 )
             ON CONFLICT(id) DO UPDATE SET author=excluded.author
             WHERE (message.author IS NULL)",
         )?;
+
+        debug!(
+            "add_message - prepare: {:.2?}",
+            now.elapsed()
+        );
+
+        let now: Instant = Instant::now();
 
         let msg_id64 = *message_id.as_u64();
         stmt.execute((
@@ -60,6 +80,14 @@ pub trait WriteableDb: GetConnectionMutable + ReadOnlyDb {
             author_id,
         ))?;
 
+        debug!(
+            "add_message - execute: {:.2?}",
+            now.elapsed()
+        );
+
+        let now: Instant = Instant::now();
+
+        let ret = 
         match queries::get_message(conn, msg_id64)? {
             Some(msg) => Ok(msg),
             None => {
@@ -67,7 +95,14 @@ pub trait WriteableDb: GetConnectionMutable + ReadOnlyDb {
                 warn!("No message with input id found despite being just added");
                 Err(Error::QueryReturnedNoRows)
             }
-        }
+        };
+
+        debug!(
+            "add_message - get_message: {:.2?}",
+            now.elapsed()
+        );
+
+        ret
     }
 
     #[inline]
