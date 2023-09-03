@@ -2,7 +2,7 @@ use crate::errors::{Result, Error};
 
 use chrono::{DateTime, Utc};
 use std::time::Instant;
-use log::{debug, error, info, trace, warn};
+use log::debug;
 use std::collections::BTreeMap;
 use std::sync::RwLock;
 use db::{writable_db_call, WriteableDb};
