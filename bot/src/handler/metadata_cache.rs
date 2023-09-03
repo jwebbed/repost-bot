@@ -9,9 +9,12 @@ use db::{writable_db_call, WriteableDb};
 
 
 static AUTHOR_CACHE: RwLock<BTreeMap<u64, DateTime<Utc>>> = RwLock::new(BTreeMap::new());
+static SERVER_CACHE: RwLock<BTreeMap<u64, DateTime<Utc>>> = RwLock::new(BTreeMap::new());
+
 
 // All TTL in seconds
 const AUTHOR_TTL: i64 = 60 * 60 * 3; // 3h
+const SERVER_TTL: i64 = 60 * 60 * 24; // 24h
 
 #[inline(always)]
 fn check_cache(cache: &RwLock<BTreeMap<u64, DateTime<Utc>>>, id: u64, ttl: i64) ->Result<bool> {
@@ -25,12 +28,9 @@ fn check_cache(cache: &RwLock<BTreeMap<u64, DateTime<Utc>>>, id: u64, ttl: i64) 
 }
 
 #[inline(always)]
-fn update_cache(cache: &RwLock<BTreeMap<u64, DateTime<Utc>>>, id: u64) -> Result<()> {
+fn update_cache(cache: &RwLock<BTreeMap<u64, DateTime<Utc>>>, id: u64) -> Result<Option<DateTime<Utc>>> {
     match cache.write() {
-        Ok(mut writable_cache) => {
-            writable_cache.insert(id, Utc::now());
-            Ok(())
-        },
+        Ok(mut writable_cache) => Ok(writable_cache.insert(id, Utc::now())),
         Err(_why) => Err(Error::ConstStr("Failed to acquire write lock on cache"))
     }
 }
@@ -50,6 +50,26 @@ pub fn update_author(user_id: u64, username: &str, bot: bool, discriminator: u16
 
     debug!(
         "update_author time elapsed: {:.2?}",
+        now.elapsed()
+    );
+
+    Ok(())
+}
+
+pub fn update_server(server_id: u64, name: &Option<String>) -> Result<()>{
+    let now = Instant::now();
+    
+    if !check_cache(&SERVER_CACHE, server_id, SERVER_TTL)? {
+        debug!("server {server_id} not in cache");
+        writable_db_call(|db| db.update_server(server_id, name))?;
+        update_cache(&SERVER_CACHE, server_id)?;
+    } else {
+        debug!("server {server_id} in cache");
+    }
+   
+
+    debug!(
+        "update_server time elapsed: {:.2?}",
         now.elapsed()
     );
 

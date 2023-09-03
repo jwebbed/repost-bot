@@ -80,7 +80,7 @@ async fn process_discord_message(ctx: &Context, msg: &Message) -> Result<db::str
         .ok_or(Error::ConstStr("Guild id doesn't exist on message"))?;
     let server_id = *server.as_u64();
     let server_name = &server.name(ctx);
-    db.update_server(server_id, server_name)?;
+    metadata_cache::update_server(server_id, server_name)?;
 
     // get channel id and load message
     let channel_id = *msg.channel_id.as_u64();
