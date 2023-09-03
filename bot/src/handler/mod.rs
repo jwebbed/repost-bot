@@ -55,6 +55,7 @@ pub async fn bot_read_channel_permission(cache: impl AsRef<Cache>, channel: &Gui
 }
 
 /// takes the message from discord, stores it, and returns the db struct for further processing
+#[inline(never)]
 async fn process_discord_message(ctx: &Context, msg: &Message) -> Result<db::structs::Message> {
     if msg.author.bot {
         return Err(Error::BotMessage);
@@ -63,12 +64,16 @@ async fn process_discord_message(ctx: &Context, msg: &Message) -> Result<db::str
     if !regular_text_msg(msg.kind) {
         return Err(Error::ConstStr("Message is not a regular text message"));
     }
-    let now = Instant::now();
+    let start = Instant::now();
 
     let db = get_writeable_db()?;
 
+
+    debug!("get db elapsed: {:.2?}", start.elapsed());
+
     let author_id = *msg.author.id.as_u64();
     metadata_cache::update_author(
+        &db,
         author_id,
         &msg.author.name,
         msg.author.bot,
@@ -80,19 +85,22 @@ async fn process_discord_message(ctx: &Context, msg: &Message) -> Result<db::str
         .ok_or(Error::ConstStr("Guild id doesn't exist on message"))?;
     let server_id = *server.as_u64();
     let server_name = &server.name(ctx);
-    metadata_cache::update_server(server_id, server_name)?;
+    metadata_cache::update_server(&db, server_id, server_name)?;
 
     // get channel id and load message
     let channel_id = *msg.channel_id.as_u64();
     let channel_name = msg.channel_id.name(&ctx.cache).await;
     // we can assume channel is visible if we are receiving messages for it
-    db.update_channel(channel_id, server_id, &channel_name.unwrap(), true)?;
+    metadata_cache::update_channel(&db, channel_id, server_id, &channel_name.unwrap(), true)?;
+
+    debug!("metadata cache elapsed: {:.2?}", start.elapsed());
+
 
     let ret = db.add_message(msg.id, channel_id, server_id, author_id)?;
 
     debug!(
         "process_discord_message time elapsed: {:.2?}",
-        now.elapsed()
+        start.elapsed()
     );
 
     Ok(ret)

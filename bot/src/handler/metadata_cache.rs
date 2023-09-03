@@ -1,7 +1,7 @@
 use crate::errors::{Error, Result};
 
 use chrono::{DateTime, Utc};
-use db::{writable_db_call, WriteableDb};
+use db:: WriteableDb;
 use log::debug;
 use serenity::model::channel;
 use std::collections::BTreeMap;
@@ -41,50 +41,57 @@ fn update_cache(
     }
 }
 
-pub fn update_author(user_id: u64, username: &str, bot: bool, discriminator: u16) -> Result<()> {
-    let now = Instant::now();
+pub fn update_author(
+    db: &impl WriteableDb,
+    user_id: u64,
+    username: &str,
+    bot: bool,
+    discriminator: u16,
+) -> Result<()> {
+   // let now = Instant::now();
 
     if !check_cache(&AUTHOR_CACHE, user_id, AUTHOR_TTL)? {
-        debug!("author {user_id} not in cache");
-        writable_db_call(|db| db.add_user(user_id, username, bot, discriminator))?;
+       // debug!("author {user_id} not in cache");
+        // writable_db_call(|db| db.add_user(user_id, username, bot, discriminator))?;
+        db.add_user(user_id, username, bot, discriminator)?;
         update_cache(&AUTHOR_CACHE, user_id)?;
     } else {
-        debug!("author {user_id} in cache");
+       // debug!("author {user_id} in cache");
     }
 
-    debug!("update_author time elapsed: {:.2?}", now.elapsed());
+  //  debug!("update_author time elapsed: {:.2?}", now.elapsed());
 
     Ok(())
 }
 
-pub fn update_server(server_id: u64, name: &Option<String>) -> Result<()> {
-    let now = Instant::now();
+pub fn update_server(db: &impl WriteableDb, server_id: u64, name: &Option<String>) -> Result<()> {
+   // let now = Instant::now();
 
     if !check_cache(&SERVER_CACHE, server_id, SERVER_TTL)? {
-        debug!("server {server_id} not in cache");
-        writable_db_call(|db| db.update_server(server_id, name))?;
+       // debug!("server {server_id} not in cache");
+         db.update_server(server_id, name)?;
         update_cache(&SERVER_CACHE, server_id)?;
     } else {
-        debug!("server {server_id} in cache");
+      //  debug!("server {server_id} in cache");
     }
 
-    debug!("update_server time elapsed: {:.2?}", now.elapsed());
+   // debug!("update_server time elapsed: {:.2?}", now.elapsed());
 
     Ok(())
 }
 
-pub fn update_channel(channel_id: u64, server_id: u64, name: &str, visible: bool) -> Result<()> {
-    let now = Instant::now();
+pub fn update_channel(db: &impl WriteableDb, channel_id: u64, server_id: u64, name: &str, visible: bool) -> Result<()> {
+  //  let now = Instant::now();
 
     if !check_cache(&CHANNEL_CACHE, channel_id, CHANNEL_TTL)? {
-        debug!("channel {channel_id} not in cache");
-        writable_db_call(|db| db.update_channel(channel_id, server_id, name, visible))?;
+    //    debug!("channel {channel_id} not in cache");
+        db.update_channel(channel_id, server_id, name, visible)?;
         update_cache(&CHANNEL_CACHE, channel_id)?;
     } else {
-        debug!("channel {channel_id} in cache");
+     //   debug!("channel {channel_id} in cache");
     }
 
-    debug!("update_channel time elapsed: {:.2?}", now.elapsed());
+  //  debug!("update_channel time elapsed: {:.2?}", now.elapsed());
 
     Ok(())
 }
