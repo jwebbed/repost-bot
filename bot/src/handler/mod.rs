@@ -193,7 +193,7 @@ async fn process_message<'a>(
 async fn process_discord_message_slow(ctx: &Context, msg: &Message) -> Result<()> {
     let server_id = msg
         .guild_id
-        .ok_or_else(|| Error::Internal("Guild id doesn't exist".to_string()))?;
+        .ok_or_else(|| Error::ConstStr("Guild id doesn't exist"))?;
 
     if let Some(nickname) = msg.author.nick_in(ctx, server_id).await {
         let db = get_writeable_db()?;
