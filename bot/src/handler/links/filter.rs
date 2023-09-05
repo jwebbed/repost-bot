@@ -77,7 +77,7 @@ static GENERIC_FIELDS: phf::Set<&'static str> = phf_set! {
 #[inline(always)]
 fn filter_field(host: &str, field: &str) -> bool {
     let host_match = match host {
-        "twitter" | "twitter.com" => TWITTER_FIELDS.contains(field),
+        "twitter" | "twitter.com" | "x" | "x.com" => TWITTER_FIELDS.contains(field),
         "youtube" | "youtube.com" => YOUTUBE_FIELDS.contains(field),
         _ => false,
     };
@@ -97,6 +97,12 @@ fn transform_url(url: Url) -> Result<Url> {
                 } else {
                     None
                 }
+            }
+            "x.com" => {
+                let mut new_url = url.clone();
+                new_url.set_host(Some("twitter.com"))?;
+                new_url.set_path(&url.path().to_ascii_lowercase());
+                Some(new_url)
             }
             "twitter.com" => {
                 let mut new_url = url.clone();
@@ -172,6 +178,33 @@ mod tests {
     fn test_twitter_case_insenstive() -> Result<()> {
         let url_lower = filtered_url("https://twitter.com/name/status/000")?;
         let url_cased = filtered_url("https://twitter.com/NaMe/status/000")?;
+        assert_eq!(url_lower, url_cased);
+        Ok(())
+    }
+
+    #[test]
+    fn test_x_transformed() -> Result<()> {
+        let url = Url::parse("https://x.com/fake_user/status/12345?s=46")?;
+        assert_eq!(
+            transform_url(url)?.as_str(),
+            "https://twitter.com/fake_user/status/12345?s=46"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn text_filter_x() -> Result<()> {
+        assert_eq!(
+            filtered_url("https://x.com/fake_user/status/12345?s=46")?.as_str(),
+            "https://twitter.com/fake_user/status/12345"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_x_case_insenstive() -> Result<()> {
+        let url_lower = filtered_url("https://x.com/name/status/000")?;
+        let url_cased = filtered_url("https://x.com/NaMe/status/000")?;
         assert_eq!(url_lower, url_cased);
         Ok(())
     }
