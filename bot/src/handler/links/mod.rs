@@ -41,8 +41,8 @@ fn get_links(msg: &str) -> Vec<String> {
     finder.kinds(&[LinkKind::Url]);
     finder
         .links(msg)
+        .filter(|link| !ignored_domain(link.as_str()))
         .map(|x| x.as_str().to_string())
-        .filter(|link| !ignored_domain(link))
         .collect()
 }
 

@@ -3,6 +3,7 @@ use crate::errors::Result;
 use log::debug;
 use phf::phf_set;
 use url::Url;
+use std::borrow::Cow;
 
 // largely sourced from newhouse/url-tracking-stripper on github
 
@@ -89,9 +90,10 @@ fn transform_url(url: Url) -> Result<Url> {
             "youtu.be" => {
                 let path = url.path();
                 if path.len() > 1 {
-                    let expanded_url =
-                        format!("https://www.youtube.com/watch?v={}", &path[1..path.len()]);
-                    Some(Url::parse(&expanded_url)?)
+                    Some(Url::parse_with_params(
+                        "https://www.youtube.com/watch",
+                        &[("v", &path[1..path.len()])],
+                    )?)
                 } else {
                     None
                 }
@@ -121,8 +123,8 @@ pub fn filtered_url(url_str: &str) -> Result<Url> {
     let fields = url
         .query_pairs()
         .filter(|(field, _value)| !filter_field(host, field))
-        .map(|(f, v)| (f.into_owned(), v.into_owned()))
-        .collect::<Vec<(String, String)>>();
+        .map(|(f, v)| (Box::from(f), Box::from(v)))
+        .collect::<Vec<(Box<str>, Box<str>)>>();
 
     let mut query = url.query_pairs_mut();
     query.clear();
@@ -180,6 +182,16 @@ mod tests {
         assert_eq!(
             transform_url(url)?.as_str(),
             "https://www.youtube.com/watch?v=fakeid"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_youtube_sl_with_params() -> Result<()> {
+        let url = Url::parse("https://youtu.be/anotherfakeid?si=fakeparam")?;
+        assert_eq!(
+            transform_url(url)?.as_str(),
+            "https://www.youtube.com/watch?v=anotherfakeid"
         );
         Ok(())
     }

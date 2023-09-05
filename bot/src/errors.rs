@@ -14,7 +14,6 @@ pub enum Error {
     Reqwest(reqwest::Error),
     ImageError(image::ImageError),
     IoError(std::io::Error),
-    Internal(String),
     BotMessage,
     ConstStr(&'static str),
 }
@@ -28,7 +27,6 @@ impl Display for Error {
             Error::Reqwest(inner) => fmt::Display::fmt(&inner, f),
             Error::ImageError(inner) => fmt::Display::fmt(&inner, f),
             Error::IoError(inner) => fmt::Display::fmt(&inner, f),
-            Error::Internal(inner) => f.write_str(inner),
             Error::ConstStr(inner) => f.write_str(inner),
             Error::BotMessage => f.write_str("Message is from a bot"),
         }
