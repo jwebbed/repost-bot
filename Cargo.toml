@@ -7,7 +7,7 @@ resolver = "2"
 opt-level = 3
 
 [profile.dev]
-opt-level = 2
+opt-level = 1
 split-debuginfo = "unpacked"
 
 # Set image hashing library to opt 3 in dev as 
@@ -15,6 +15,3 @@ split-debuginfo = "unpacked"
 [profile.dev.package]
 image = { opt-level = 3 } 
 visual-hash = { opt-level = 3 } 
-
-[profile.vscode]
-inherits = "dev"
