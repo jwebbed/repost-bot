@@ -158,6 +158,7 @@ dependencies = [
  "linkify",
  "log",
  "phf",
+ "processers",
  "rand",
  "regex",
  "reqwest",
@@ -1306,6 +1307,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "18fb31db3f9bddb2ea821cde30a9f70117e3f119938b5ee630b7403aa6e2ead9"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "processers"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "db",
+ "humantime",
+ "image",
+ "itertools",
+ "lazy_static",
+ "linkify",
+ "log",
+ "phf",
+ "rand",
+ "regex",
+ "reqwest",
+ "rusqlite",
+ "serde_json",
+ "serenity",
+ "simple_logger",
+ "time 0.3.28",
+ "unicode-segmentation",
+ "url",
+ "visual-hash",
 ]
 
 [[package]]

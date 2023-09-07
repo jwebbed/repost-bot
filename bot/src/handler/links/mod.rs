@@ -1,7 +1,7 @@
 mod filter;
 
 use crate::errors::Result;
-use crate::structs::repost::{RepostSet, RepostType};
+use processers::{RepostSet, RepostType};
 use filter::filtered_url;
 
 use db::{read_only_db_call, structs::Link, writable_db_call, ReadOnlyDb, WriteableDb};

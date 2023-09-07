@@ -4,9 +4,9 @@ mod links;
 
 use crate::errors::{Error, Result};
 use crate::structs::reply::{Reply, ReplyType};
-use crate::structs::repost::RepostSet;
 
 use db::{get_read_only_db, get_writeable_db, writable_db_call, ReadOnlyDb, WriteableDb};
+use processers::RepostSet;
 use images::ImageProcesser;
 use log::{debug, error, info, trace, warn};
 use rand::seq::SliceRandom;

@@ -1,6 +1,6 @@
 [workspace]
 default-members = ["bot"]
-members = ["bot", "db"]
+members = ["bot", "db", "processers"]
 resolver = "2"
 
 [profile.release]

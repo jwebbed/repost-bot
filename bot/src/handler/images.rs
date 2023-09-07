@@ -1,5 +1,5 @@
 use crate::errors::{Error, Result};
-use crate::structs::repost::{RepostSet, RepostType};
+use processers::{RepostSet, RepostType};
 
 use db::{get_read_only_db, writable_db_call, ReadOnlyDb, WriteableDb};
 use image::error::ImageError;
