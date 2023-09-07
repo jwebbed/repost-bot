@@ -3,7 +3,7 @@ mod images;
 mod links;
 
 use crate::errors::{Error, Result};
-use crate::structs::reply::Reply;
+use crate::structs::reply::{Reply, ReplyType};
 use crate::structs::repost::RepostSet;
 
 use db::{get_read_only_db, get_writeable_db, writable_db_call, ReadOnlyDb, WriteableDb};
@@ -146,11 +146,11 @@ async fn process_message_update<'a>(
         if should_reply && reposts.len() > 0 {
             // need to get any link reposts if we're gonna edit the reply
             reposts.union(&links::get_reposts_for_message_id(msg_id)?);
-            return Ok(reposts.generate_reply_for_message_id(
-                &event.id,
-                &event.channel_id,
-                db_msg.created_at,
-            ));
+            return Ok(reposts
+                .generate_reply_text(db_msg.created_at)
+                .map(|message| {
+                    Reply::new(message, ReplyType::MessageId(event.id, event.channel_id))
+                }));
         }
     }
 

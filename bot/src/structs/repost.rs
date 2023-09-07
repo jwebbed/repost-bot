@@ -66,7 +66,7 @@ impl RepostSet {
         channel_id: &'a model::id::ChannelId,
         msg_created_at: DateTime<Utc>,
     ) -> Option<Reply<'a>> {
-        self.generate_reply(msg_created_at)
+        self.generate_reply_text(msg_created_at)
             .map(|x| Reply::new(x, ReplyType::MessageId(*msg_id, *channel_id)))
     }
 
@@ -74,11 +74,11 @@ impl RepostSet {
         &self,
         msg: &'a serenity::model::prelude::Message,
     ) -> Option<Reply<'a>> {
-        self.generate_reply(*msg.id.created_at())
+        self.generate_reply_text(*msg.id.created_at())
             .map(|x| Reply::new(x, ReplyType::Message(msg)))
     }
 
-    fn generate_reply(&self, reply_to_created_at: DateTime<Utc>) -> Option<String> {
+    pub fn generate_reply_text(&self, reply_to_created_at: DateTime<Utc>) -> Option<String> {
         if !self.reposts.is_empty() {
             info!("generating reply for {self:?}");
         }
@@ -209,7 +209,7 @@ mod tests {
             RepostType::Image,
         );
 
-        let reply_str = set.generate_reply(get_datetime(2, 0, 0));
+        let reply_str = set.generate_reply_text(get_datetime(2, 0, 0));
         assert_eq!(
             Some("🚨 IMAGE 🚨 REPOST 🚨 1h https://discord.com/channels/1/1/1".to_string()),
             reply_str
@@ -224,7 +224,7 @@ mod tests {
             RepostType::Link,
         );
 
-        let reply_str = set.generate_reply(get_datetime(2, 0, 0));
+        let reply_str = set.generate_reply_text(get_datetime(2, 0, 0));
         assert_eq!(
             Some("🚨 LINK 🚨 REPOST 🚨 1h https://discord.com/channels/1/1/1".to_string()),
             reply_str
@@ -244,7 +244,7 @@ mod tests {
             RepostType::Image,
         );
 
-        let reply_str = set.generate_reply(Utc.with_ymd_and_hms(2022, 5, 1, 3, 0, 0).unwrap());
+        let reply_str = set.generate_reply_text(Utc.with_ymd_and_hms(2022, 5, 1, 3, 0, 0).unwrap());
         assert_eq!(
             Some(
                 "🚨 IMAGE 🚨 REPOST 🚨\n\
@@ -269,7 +269,7 @@ mod tests {
             RepostType::Link,
         );
 
-        let reply_str = set.generate_reply(Utc.with_ymd_and_hms(2022, 5, 1, 3, 0, 0).unwrap());
+        let reply_str = set.generate_reply_text(Utc.with_ymd_and_hms(2022, 5, 1, 3, 0, 0).unwrap());
         assert_eq!(
             Some(
                 "🚨 LINK 🚨 REPOST 🚨\n\
@@ -294,7 +294,7 @@ mod tests {
             RepostType::Link,
         );
 
-        let reply_str = set.generate_reply(Utc.with_ymd_and_hms(2022, 5, 1, 3, 0, 0).unwrap());
+        let reply_str = set.generate_reply_text(Utc.with_ymd_and_hms(2022, 5, 1, 3, 0, 0).unwrap());
         assert_eq!(
             Some(
                 "🚨 IMAGE/LINK 🚨 REPOST 🚨\n\
@@ -324,7 +324,7 @@ mod tests {
             RepostType::Image,
         );
 
-        let reply_str = set.generate_reply(Utc.with_ymd_and_hms(2022, 5, 1, 3, 0, 0).unwrap());
+        let reply_str = set.generate_reply_text(Utc.with_ymd_and_hms(2022, 5, 1, 3, 0, 0).unwrap());
         assert_eq!(
             Some(
                 "🚨 IMAGE/LINK 🚨 REPOST 🚨\n\
@@ -343,7 +343,7 @@ mod tests {
         set.add(msg, RepostType::Link);
         set.add(msg, RepostType::Image);
 
-        let reply_str = set.generate_reply(Utc.with_ymd_and_hms(2022, 5, 1, 2, 0, 0).unwrap());
+        let reply_str = set.generate_reply_text(Utc.with_ymd_and_hms(2022, 5, 1, 2, 0, 0).unwrap());
         assert_eq!(
             Some("🚨 IMAGE/LINK 🚨 REPOST 🚨 1h https://discord.com/channels/1/1/1".to_string()),
             reply_str

@@ -33,6 +33,7 @@ impl Reply<'_> {
             message: ReplyContents::String(message),
             place,
         }
+        
     }
 
     pub const fn new_const<'a>(message: &'static str, place: ReplyType<'a>) -> Reply<'a> {
