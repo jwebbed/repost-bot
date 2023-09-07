@@ -1,5 +1,4 @@
 use crate::errors::{Error, Result};
-use processers::{RepostSet, RepostType};
 
 use db::{get_read_only_db, writable_db_call, ReadOnlyDb, WriteableDb};
 use image::error::ImageError;
@@ -11,6 +10,8 @@ use serenity::model::prelude::{EmbedThumbnail, Message};
 use std::io::Cursor;
 use std::time::Instant;
 use visual_hash::{HashAlg, HasherConfig, ImageHash};
+use crate::repost::{RepostSet, RepostType};
+
 
 static IGNORED_PROVIDERS: phf::Set<&'static str> = phf_set! {
     "Tenor",

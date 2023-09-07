@@ -1,12 +1,12 @@
 mod pins;
 
-use crate::errors::Result;
 use crate::structs::reply::{Reply, ReplyType};
 
 use db::{read_only_db_call, ReadOnlyDb};
 use lazy_static::lazy_static;
 use log::warn;
 use regex::Regex;
+use processers::{Error, Result};
 use serenity::{model::channel::Message, prelude::*};
 
 pub(super) fn has_command_prefix(command: &str) -> bool {

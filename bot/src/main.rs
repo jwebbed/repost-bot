@@ -4,7 +4,6 @@
     clippy::option_if_let_else
 )]
 
-mod errors;
 mod handler;
 mod structs;
 

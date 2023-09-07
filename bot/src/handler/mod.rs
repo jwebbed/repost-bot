@@ -1,13 +1,12 @@
 mod commands;
-mod images;
-mod links;
 
-use crate::errors::{Error, Result};
 use crate::structs::reply::{Reply, ReplyType};
 
 use db::{get_read_only_db, get_writeable_db, writable_db_call, ReadOnlyDb, WriteableDb};
 use processers::RepostSet;
-use images::ImageProcesser;
+use processers::ImageProcesser;
+use processers::{Error, Result};
+use processers::links::{get_reposts_for_message_id, store_links_and_get_reposts};
 use log::{debug, error, info, trace, warn};
 use rand::seq::SliceRandom;
 use rand::{random, thread_rng};
@@ -145,7 +144,7 @@ async fn process_message_update<'a>(
         .await?;
         if should_reply && reposts.len() > 0 {
             // need to get any link reposts if we're gonna edit the reply
-            reposts.union(&links::get_reposts_for_message_id(msg_id)?);
+            reposts.union(&get_reposts_for_message_id(msg_id)?);
             return Ok(reposts
                 .generate_reply_text(db_msg.created_at)
                 .map(|message| {
@@ -178,7 +177,7 @@ async fn process_message<'a>(
         };
 
         if !db_msg.is_repost_parsed() {
-            repost_set.union(&links::store_links_and_get_reposts(msg, new)?);
+            repost_set.union(&store_links_and_get_reposts(msg, new)?);
         };
 
         repost_set

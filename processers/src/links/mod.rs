@@ -1,12 +1,13 @@
 mod filter;
 
-use crate::errors::Result;
-use processers::{RepostSet, RepostType};
-use filter::filtered_url;
+use crate::repost::{RepostSet, RepostType};
+use crate::errors::{Error, Result};
 
+use filter::filtered_url;
 use db::{read_only_db_call, structs::Link, writable_db_call, ReadOnlyDb, WriteableDb};
 use lazy_static::lazy_static;
 use linkify::{LinkFinder, LinkKind};
+
 use log::{error, info};
 use regex::Regex;
 use serenity::model::channel::Message;
