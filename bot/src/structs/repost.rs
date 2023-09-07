@@ -1,11 +1,11 @@
-use crate::structs::reply::{Reply, ReplyType};
+
 
 use chrono::{DateTime, Utc};
 use db::structs::Message;
 use humantime::format_duration;
 use itertools::Itertools;
 use log::info;
-use serenity::model;
+
 use std::collections::{BTreeMap, HashSet};
 use std::vec::Vec;
 
@@ -58,24 +58,6 @@ impl RepostSet {
 
     pub fn len(&self) -> usize {
         self.reposts.len()
-    }
-
-    pub fn generate_reply_for_message_id<'a>(
-        &self,
-        msg_id: &'a model::id::MessageId,
-        channel_id: &'a model::id::ChannelId,
-        msg_created_at: DateTime<Utc>,
-    ) -> Option<Reply<'a>> {
-        self.generate_reply_text(msg_created_at)
-            .map(|x| Reply::new(x, ReplyType::MessageId(*msg_id, *channel_id)))
-    }
-
-    pub fn generate_reply_for_message<'a>(
-        &self,
-        msg: &'a serenity::model::prelude::Message,
-    ) -> Option<Reply<'a>> {
-        self.generate_reply_text(*msg.id.created_at())
-            .map(|x| Reply::new(x, ReplyType::Message(msg)))
     }
 
     pub fn generate_reply_text(&self, reply_to_created_at: DateTime<Utc>) -> Option<String> {

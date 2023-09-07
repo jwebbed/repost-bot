@@ -181,7 +181,9 @@ async fn process_message<'a>(
             repost_set.union(&links::store_links_and_get_reposts(msg, new)?);
         };
 
-        repost_set.generate_reply_for_message(msg)
+        repost_set
+            .generate_reply_text(*msg.id.created_at())
+            .map(|message| Reply::new(message, ReplyType::Message(msg)))
     };
 
     get_writeable_db()?.mark_message_all_checked(msg.id)?;
