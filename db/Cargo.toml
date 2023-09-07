@@ -19,4 +19,4 @@ features = ["bundled", "chrono"]
 [dependencies.serenity]
 version = "0.11"
 default-features = false
-features = ["model","chrono", "rustls_backend"]
+features = ["model", "chrono", "rustls_backend"]
