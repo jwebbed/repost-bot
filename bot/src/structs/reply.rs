@@ -1,8 +1,7 @@
-
 use db::{read_only_db_call, writable_db_call, ReadOnlyDb, WriteableDb};
 use log::info;
-use serde_json::json;
 use processers::{Error, Result};
+use serde_json::json;
 use serenity::builder::ParseValue;
 use serenity::model;
 use serenity::model::channel::MessageReference;

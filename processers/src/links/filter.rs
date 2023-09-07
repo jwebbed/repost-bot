@@ -1,4 +1,4 @@
-use crate::errors::{Error, Result};
+use crate::errors::Result;
 
 use log::debug;
 use phf::phf_set;

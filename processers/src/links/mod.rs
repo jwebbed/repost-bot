@@ -1,10 +1,10 @@
 mod filter;
 
+use crate::errors::Result;
 use crate::repost::{RepostSet, RepostType};
-use crate::errors::{Error, Result};
 
-use filter::filtered_url;
 use db::{read_only_db_call, structs::Link, writable_db_call, ReadOnlyDb, WriteableDb};
+use filter::filtered_url;
 use lazy_static::lazy_static;
 use linkify::{LinkFinder, LinkKind};
 
@@ -70,7 +70,7 @@ pub fn store_links_and_get_reposts(msg: &Message, include_reply: bool) -> Result
         writable_db_call(|mut db| db.insert_link(filtered_link.as_str(), *msg.id.as_u64()))?;
     }
     // if include_reply false len should always be 0
-    if reposts.len() > 0 {
+    if !reposts.is_empty() {
         info!("Found {} reposts: {reposts:?}", reposts.len());
     }
     Ok(reposts)

@@ -1,5 +1,3 @@
-
-
 use chrono::{DateTime, Utc};
 use db::structs::Message;
 use humantime::format_duration;
@@ -60,6 +58,10 @@ impl RepostSet {
         self.reposts.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.reposts.is_empty()
+    }
+
     pub fn generate_reply_text(&self, reply_to_created_at: DateTime<Utc>) -> Option<String> {
         if !self.reposts.is_empty() {
             info!("generating reply for {self:?}");
@@ -90,6 +92,12 @@ impl RepostSet {
                 Some(format!("🚨 {}REPOST 🚨\n{}", header_prefix, lines))
             }
         }
+    }
+}
+
+impl Default for RepostSet {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

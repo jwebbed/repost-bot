@@ -2,7 +2,7 @@ use crate::handler::bot_read_channel_permission;
 use crate::structs::reply::{Reply, ReplyType};
 
 use log::trace;
-use processers::{Error, Result};
+use processers::Result;
 use serenity::{model::channel::ChannelType, model::channel::Message, prelude::*};
 use std::collections::HashMap;
 

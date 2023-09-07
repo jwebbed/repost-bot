@@ -3,11 +3,11 @@ mod commands;
 use crate::structs::reply::{Reply, ReplyType};
 
 use db::{get_read_only_db, get_writeable_db, writable_db_call, ReadOnlyDb, WriteableDb};
-use processers::RepostSet;
-use processers::ImageProcesser;
-use processers::{Error, Result};
-use processers::links::{get_reposts_for_message_id, store_links_and_get_reposts};
 use log::{debug, error, info, trace, warn};
+use processers::links::{get_reposts_for_message_id, store_links_and_get_reposts};
+use processers::ImageProcesser;
+use processers::RepostSet;
+use processers::{Error, Result};
 use rand::seq::SliceRandom;
 use rand::{random, thread_rng};
 
@@ -142,7 +142,7 @@ async fn process_message_update<'a>(
         )
         .process(should_reply)
         .await?;
-        if should_reply && reposts.len() > 0 {
+        if should_reply && !reposts.is_empty() {
             // need to get any link reposts if we're gonna edit the reply
             reposts.union(&get_reposts_for_message_id(msg_id)?);
             return Ok(reposts
