@@ -4,26 +4,25 @@ use humantime::format_duration;
 use itertools::Itertools;
 use log::info;
 
-use std::collections::{BTreeMap, HashSet};
-use std::vec::Vec;
+use std::collections::{BTreeMap, BTreeSet};
 
-#[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
+#[derive(Hash, Eq, PartialEq, Ord, PartialOrd, Debug, Copy, Clone)]
 pub enum RepostType {
-    Link,
     Image,
+    Link,
 }
 
 #[derive(Debug)]
 pub struct RepostSet {
-    reposts: BTreeMap<Message, HashSet<RepostType>>,
-    types: HashSet<RepostType>,
+    reposts: BTreeMap<Message, BTreeSet<RepostType>>,
+    types: BTreeSet<RepostType>,
 }
 
 impl RepostSet {
     pub fn new() -> RepostSet {
         RepostSet {
             reposts: BTreeMap::new(),
-            types: HashSet::new(),
+            types: BTreeSet::new(),
         }
     }
 
@@ -31,16 +30,16 @@ impl RepostSet {
         RepostSet {
             reposts: messages
                 .iter()
-                .map(|m| (*m, HashSet::from([repost_type])))
+                .map(|m| (*m, BTreeSet::from([repost_type])))
                 .collect(),
-            types: HashSet::from([repost_type]),
+            types: BTreeSet::from([repost_type]),
         }
     }
 
     pub fn add(&mut self, msg: Message, repost_type: RepostType) {
         self.reposts
             .entry(msg)
-            .or_insert_with(HashSet::new)
+            .or_insert_with(BTreeSet::new)
             .insert(repost_type);
         self.types.insert(repost_type);
     }
@@ -117,8 +116,8 @@ impl RepostType {
     }
 }
 
-fn prefix_text(repost_types: &HashSet<RepostType>, long_text: bool) -> String {
-    let mut labels: Vec<&str> = repost_types
+fn prefix_text(repost_types: &BTreeSet<RepostType>, long_text: bool) -> String {
+    repost_types
         .iter()
         .map(|t| {
             if long_text {
@@ -127,13 +126,7 @@ fn prefix_text(repost_types: &HashSet<RepostType>, long_text: bool) -> String {
                 t.text_short()
             }
         })
-        .collect();
-    labels.sort_unstable();
-    if long_text {
-        labels.join("/")
-    } else {
-        labels.join("")
-    }
+        .join(if long_text { "/" } else { "" })
 }
 
 fn repost_text(original_message: &Message, reply_to_created_at: DateTime<Utc>) -> String {
@@ -319,7 +312,7 @@ mod tests {
             Some(
                 "🚨 IMAGE/LINK 🚨 REPOST 🚨\n\
             🖼️ 2h https://discord.com/channels/1/1/1\n\
-            🔗🖼️ 1h https://discord.com/channels/1/1/2"
+            🖼️🔗 1h https://discord.com/channels/1/1/2"
                     .to_string()
             ),
             reply_str
