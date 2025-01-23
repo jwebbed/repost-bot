@@ -40,10 +40,7 @@ impl RepostSet {
     }
 
     pub fn add(&mut self, msg: Message, repost_type: RepostType) {
-        self.reposts
-            .entry(msg)
-            .or_insert_with(HashSet::new)
-            .insert(repost_type);
+        self.reposts.entry(msg).or_default().insert(repost_type);
         self.types.insert(repost_type);
     }
 
