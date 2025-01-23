@@ -43,7 +43,7 @@ fn regular_text_msg(kind: MessageType) -> bool {
     kind == MessageType::Regular || kind == MessageType::InlineReply
 }
 
-pub async fn bot_read_channel_permission(cache: impl AsRef<Cache>, channel: &GuildChannel) -> bool {
+pub fn bot_read_channel_permission(cache: impl AsRef<Cache>, channel: &GuildChannel) -> bool {
     let current_user_id = cache.as_ref().current_user().id;
     match channel.permissions_for_user(cache, current_user_id) {
         Ok(permissions) => {
@@ -361,7 +361,7 @@ impl EventHandler for Handler {
     }
 
     async fn channel_create(&self, ctx: Context, channel: &GuildChannel) {
-        let visible = bot_read_channel_permission(&ctx, channel).await;
+        let visible = bot_read_channel_permission(&ctx, channel);
         log_error(
             writable_db_call(|db| {
                 db.update_channel(
@@ -378,7 +378,7 @@ impl EventHandler for Handler {
     async fn channel_update(&self, ctx: Context, _old: Option<Channel>, new: Channel) {
         match new.guild() {
             Some(channel) => {
-                let visible = bot_read_channel_permission(&ctx, &channel).await;
+                let visible = bot_read_channel_permission(&ctx, &channel);
                 let (id, name, server) = (channel.id, channel.name, *channel.guild_id.as_u64());
                 info!("received channel update for channel id {id} with name {name} in server {server}, visibility is now: {visible}");
                 log_error(
@@ -506,7 +506,7 @@ impl EventHandler for Handler {
                     // insert all channels to update names and build visibility map
                     let mut visibility_map = HashMap::with_capacity(channels.len());
                     for (id, channel) in channels.clone() {
-                        let visible = bot_read_channel_permission(ctx, &channel).await;
+                        let visible = bot_read_channel_permission(ctx, &channel);
                         visibility_map.insert(id, visible);
                         log_error(
                             db.update_channel(
