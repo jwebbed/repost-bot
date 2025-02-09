@@ -12,9 +12,12 @@ paste = "1.0"
 
 [dependencies.rusqlite]
 version = "0.33"
-features = ["bundled", "chrono"]
+features = ["chrono"]
 
 [dependencies.serenity]
 version = "0.12"
 default-features = false
 features = ["model","chrono", "rustls_backend"]
+
+[features]
+bundled = ["rusqlite/bundled"]
