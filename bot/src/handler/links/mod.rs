@@ -2,22 +2,15 @@ mod filter;
 
 use crate::errors::Result;
 use crate::structs::repost::{RepostSet, RepostType};
+use crate::structs::{Post, PostProcessor, ProcessedPost};
 use filter::filtered_url;
 
-use db::{read_only_db_call, structs::Link, writable_db_call, ReadOnlyDb, WriteableDb};
+use db::{read_only_db_call, get_read_only_db, structs::Link, writable_db_call, ReadOnlyDb, WriteableDb};
 use lazy_static::lazy_static;
 use linkify::{LinkFinder, LinkKind};
 use log::{error, info};
 use regex::Regex;
-use serenity::model::channel::Message;
-
-fn query_link_matches(url_str: &str, server: u64) -> Result<Vec<Link>> {
-    let mut links = Vec::new();
-    for link in read_only_db_call(|db| db.query_links(url_str, server))? {
-        links.push(link)
-    }
-    Ok(links)
-}
+use url::Url;
 
 const IGNORED_DOMAINS: [&str; 5] = [
     r"globle-game\.com",
@@ -36,43 +29,75 @@ fn ignored_domain(text: &str) -> bool {
     RE.is_match(text)
 }
 
-fn get_links(msg: &str) -> Vec<String> {
+#[derive(Debug)]
+pub struct LinkProcessor {
+    post: Post,
+}
+
+struct Links {
+    msg_id: u64,
+    server_id: u64,
+    links: Box<[Url]>,
+}
+
+impl PostProcessor for LinkProcessor {
+    fn new(post: Post) -> LinkProcessor {
+        LinkProcessor { post }
+    }
+
+    async fn process(&self) -> Result<impl ProcessedPost> {
+        let links = get_links(self.post.content())
+            .map(|link| filtered_url(&link))
+            .filter_map(|url| match url {
+                Ok(url) => Some(url),
+                Err(why) => {
+                    error!("Failed to filter url: {why:?}");
+                    None
+                }
+            })
+            .collect();
+
+        Ok(Links {
+            msg_id: self.post.id(),
+            server_id: self.post.server_id(),
+            links,
+        })
+    }
+}
+
+impl ProcessedPost for Links {
+    fn get_reposts(&self) -> Result<RepostSet> {
+        let mut reposts = RepostSet::new();
+        if !self.links.is_empty() {
+            let db = get_read_only_db()?;
+            for link in &self.links {
+                for rlink in db.query_links(link.as_str(), self.server_id)? {
+                    reposts.add(rlink.message, RepostType::Link);
+                }
+            }
+        }
+        if reposts.len() > 0 {
+            info!("Found {} reposts: {reposts:?}", reposts.len());
+        }
+
+        Ok(reposts)
+    }
+
+    fn store_post(&self) -> Result<()> {
+        for link in &self.links {
+            writable_db_call(|mut db| db.insert_link(link.as_str(), self.msg_id))?;
+        }
+        Ok(())
+    }
+}
+
+fn get_links(msg: &str) -> impl Iterator<Item = Box<str>> + use<'_> {
     let mut finder = LinkFinder::new();
     finder.kinds(&[LinkKind::Url]);
     finder
         .links(msg)
         .filter(|link| !ignored_domain(link.as_str()))
-        .map(|x| x.as_str().to_string())
-        .collect()
-}
-
-pub fn store_links_and_get_reposts(msg: &Message, include_reply: bool) -> Result<RepostSet> {
-    let mut reposts = RepostSet::new();
-    let server_id = msg.guild_id.unwrap().get();
-    for link in get_links(&msg.content) {
-        let filtered_link = match filtered_url(&link) {
-            Ok(url) => url,
-            Err(why) => {
-                error!("Failed to filter url: {why:?}");
-                continue;
-            }
-        };
-
-        if include_reply {
-            let repost_links = query_link_matches(filtered_link.as_str(), server_id)?;
-            for rlink in repost_links {
-                reposts.add(rlink.message, RepostType::Link);
-            }
-        }
-
-        // finally insert this link into db
-        writable_db_call(|mut db| db.insert_link(filtered_link.as_str(), msg.id.get()))?;
-    }
-    // if include_reply false len should always be 0
-    if reposts.len() > 0 {
-        info!("Found {} reposts: {reposts:?}", reposts.len());
-    }
-    Ok(reposts)
+        .map(|x| x.as_str().into())
 }
 
 pub fn get_reposts_for_message_id(message_id: u64) -> Result<RepostSet> {
@@ -87,10 +112,10 @@ mod tests {
     use super::*;
     #[test]
     fn test_extract_link() {
-        let links = get_links("test msg with link https://twitter.com/user/status/idnumber?s=20");
+        let links = get_links("test msg with link https://twitter.com/user/status/idnumber?s=20").collect::<Vec<_>>();
 
         assert_eq!(links.len(), 1);
-        assert_eq!(links[0], "https://twitter.com/user/status/idnumber?s=20");
+        assert_eq!(links[0], "https://twitter.com/user/status/idnumber?s=20".into());
     }
 
     #[test]
@@ -98,11 +123,11 @@ mod tests {
         let links = get_links(
             "test msg with link https://twitter.com/user/status/idnumber?s=20 and
              another link https://www.bbc.com/news/article",
-        );
+        ).collect::<Vec<_>>();
 
         assert_eq!(links.len(), 2);
-        assert!(links.contains(&"https://twitter.com/user/status/idnumber?s=20".to_string()));
-        assert!(links.contains(&"https://www.bbc.com/news/article".to_string()));
+        assert!(links.contains(&"https://twitter.com/user/status/idnumber?s=20".into()));
+        assert!(links.contains(&"https://www.bbc.com/news/article".into()));
     }
 
     #[test]
@@ -113,21 +138,21 @@ mod tests {
             and also ignore tenor https://tenor.com/view/gif-name
              another link https://www.bbc.com/news/article
              discord link but not a channel https://discord.com/developers/docs/intro",
-        );
+        ).collect::<Vec<_>>();
 
         assert_eq!(links.len(), 2);
-        assert!(links.contains(&"https://www.bbc.com/news/article".to_string()));
-        assert!(links.contains(&"https://discord.com/developers/docs/intro".to_string()));
+        assert!(links.contains(&"https://www.bbc.com/news/article".into()));
+        assert!(links.contains(&"https://discord.com/developers/docs/intro".into()));
     }
 
     #[test]
     fn test_extract_no_link() {
         assert_eq!(
-            get_links("just a random message with no links in it").len(),
+            get_links("just a random message with no links in it").collect::<Vec<_>>().len(),
             0
         );
         assert_eq!(
-            get_links("example@example.org isnt a link but could be by some definitions").len(),
+            get_links("example@example.org isnt a link but could be by some definitions").collect::<Vec<_>>().len(),
             0
         );
     }
@@ -141,9 +166,9 @@ mod tests {
         
         https://globle-game.com/";
 
-        assert_eq!(get_links(message).len(), 0);
+        assert_eq!(get_links(message).collect::<Vec<_>>().len(), 0);
         // Also assert with no trailing slash
-        assert_eq!(get_links("https://globle-game.com").len(), 0);
+        assert_eq!(get_links("https://globle-game.com").collect::<Vec<_>>().len(), 0);
     }
 
     #[test]
@@ -154,9 +179,9 @@ mod tests {
         
         https://heardle.app/";
 
-        assert_eq!(get_links(message).len(), 0);
+        assert_eq!(get_links(message).collect::<Vec<_>>().len(), 0);
         // Also assert with no trailing slash
-        assert_eq!(get_links("https://heardle.app").len(), 0);
+        assert_eq!(get_links("https://heardle.app").collect::<Vec<_>>().len(), 0);
     }
 
     #[test]
@@ -167,8 +192,8 @@ mod tests {
         🟩🟩🟩🟩🟩🎉
         https://worldle.teuteuf.fr/";
 
-        assert_eq!(get_links(message).len(), 0);
+        assert_eq!(get_links(message).collect::<Vec<_>>().len(), 0);
         // Also assert with no trailing slash
-        assert_eq!(get_links("https://worldle.teuteuf.fr").len(), 0);
+        assert_eq!(get_links("https://worldle.teuteuf.fr").collect::<Vec<_>>().len(), 0);
     }
 }

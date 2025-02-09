@@ -16,6 +16,7 @@ pub enum Error {
     IoError(std::io::Error),
     BotMessage,
     ConstStr(&'static str),
+    BoxedErr(Box<Error>),
 }
 
 impl Display for Error {
@@ -27,6 +28,7 @@ impl Display for Error {
             Error::Reqwest(inner) => fmt::Display::fmt(&inner, f),
             Error::ImageError(inner) => fmt::Display::fmt(&inner, f),
             Error::IoError(inner) => fmt::Display::fmt(&inner, f),
+            Error::BoxedErr(inner) => fmt::Display::fmt(&inner, f),
             Error::ConstStr(inner) => f.write_str(inner),
             Error::BotMessage => f.write_str("Message is from a bot"),
         }
@@ -68,5 +70,11 @@ impl From<image::ImageError> for Error {
 impl From<std::io::Error> for Error {
     fn from(e: std::io::Error) -> Error {
         Error::IoError(e)
+    }
+}
+
+impl From<&Error> for Error {
+    fn from(e: &Error) -> Error {
+        Error::BoxedErr(Box::new(e.into()))
     }
 }

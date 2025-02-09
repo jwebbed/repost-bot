@@ -5,9 +5,10 @@ mod links;
 use crate::errors::{Error, Result};
 use crate::structs::reply::Reply;
 use crate::structs::repost::RepostSet;
+use crate::structs::{Post, PostProcessor, ProcessedPost};
 
 use db::{get_read_only_db, get_writeable_db, writable_db_call, ReadOnlyDb, WriteableDb};
-use images::ImageProcesser;
+use images::ImageProcessor;
 use log::{debug, error, info, trace, warn};
 use rand::seq::SliceRandom;
 use rand::{random, thread_rng};
@@ -55,7 +56,7 @@ pub fn bot_read_channel_permission(cache: impl AsRef<Cache>, channel: GuildChann
 }
 
 /// takes the message from discord, stores it, and returns the db struct for further processing
-async fn process_discord_message(ctx: &Context, msg: &Message) -> Result<db::structs::Message> {
+async fn process_discord_message(ctx: &Context, msg: &Message) -> Result<Post> {
     if msg.author.bot {
         return Err(Error::BotMessage);
     }
@@ -87,14 +88,14 @@ async fn process_discord_message(ctx: &Context, msg: &Message) -> Result<db::str
     // we can assume channel is visible if we are receiving messages for it
     db.update_channel(channel_id, server_id, &channel_name.unwrap(), true)?;
 
-    let ret = db.add_message(msg.id.into(), channel_id, server_id, msg.author.id.into())?;
+    let db_msg = db.add_message(msg.id.into(), channel_id, server_id, msg.author.id.into())?;
 
     trace!(
         "process_discord_message time elapsed: {:.2?}",
         now.elapsed()
     );
 
-    Ok(ret)
+    Ok(Post::from_message(&db_msg, msg))
 }
 
 async fn process_message_update<'a>(
@@ -114,38 +115,18 @@ async fn process_message_update<'a>(
         return Ok(None);
     }
     // TODO: no more unwraps
-    let db_msg = db_msg_maybe.unwrap();
-    // just handling embeds right now as it's a common occurance that the embed
-    // only gets loaded after the message is first sent. As such, if we don't
-    // handle it, embeds will get routinely missed.
-    //
-    // We should eventually use this to check if existing images / links are
-    // removed and if attachments / links are added.
-    if event.embeds.is_some() || event.attachments.is_some() {
-        // we should reply if the message is recent, if it's an older message
-        // being updated we'll leave it be
-        let should_reply = db_msg.is_recent();
-
-        let embeds_default = vec![];
-        let attachments_default = vec![];
-
-        let embeds = event.embeds.as_ref().map_or(&embeds_default, |r| r);
-        let attachments = event
-            .attachments
-            .as_ref()
-            .map_or(&attachments_default, |r| r);
-
-        let mut reposts =
-            ImageProcesser::new(msg_id, event.guild_id.unwrap().into(), attachments, embeds)
-                .process(should_reply)
-                .await?;
-        if should_reply && reposts.len() > 0 {
-            // need to get any link reposts if we're gonna edit the reply
-            reposts.union(&links::get_reposts_for_message_id(msg_id)?);
+    let post = Post::from_update(&db_msg_maybe.unwrap(), event);
+    if post.has_attachments() {
+        let processor = ImageProcessor::new(post.clone());
+        let processed_post = processor.process().await?;
+        let mut reposts = processed_post.get_reposts()?;
+        processed_post.store_post()?;
+        if post.db_message.is_recent() && reposts.len() > 0 {
+            reposts.union(&links::get_reposts_for_message_id(post.id())?);
             return Ok(reposts.generate_reply_for_message_id(
                 &event.id,
                 &event.channel_id,
-                db_msg.created_at,
+                post.db_message.created_at,
             ));
         }
     }
@@ -153,15 +134,16 @@ async fn process_message_update<'a>(
     Ok(None)
 }
 
+#[inline(always)]
 async fn process_message<'a>(
     ctx: &Context,
     msg: &'a Message,
     new: bool,
 ) -> Result<Option<Reply<'a>>> {
     // need to do this first, also does validation
-    let db_msg = process_discord_message(ctx, msg).await?;
-
-    let ret = if commands::has_command_prefix(&msg.content) {
+    let post = process_discord_message(ctx, msg).await?;
+    info!("Received post: {post:?}");
+    let ret = if commands::has_command_prefix(post.content()) {
         if new {
             commands::handle_command(ctx, msg).await
         } else {
@@ -169,12 +151,22 @@ async fn process_message<'a>(
         }
     } else {
         let mut repost_set = RepostSet::new();
-        if !db_msg.is_embed_parsed() {
-            repost_set.union(&ImageProcesser::from_message(msg)?.process(new).await?);
+        if !post.db_message.is_embed_parsed() {
+            let processor = ImageProcessor::new(post.clone());
+            let processed_post = processor.process().await?;
+            if new {
+                repost_set.union(&processed_post.get_reposts()?);
+            }
+            processed_post.store_post()?;
         };
 
-        if !db_msg.is_repost_parsed() {
-            repost_set.union(&links::store_links_and_get_reposts(msg, new)?);
+        if !post.db_message.is_repost_parsed() {
+            let processor = links::LinkProcessor::new(post.clone());
+            let processed_post = processor.process().await?;
+            if new {
+                repost_set.union(&processed_post.get_reposts()?);
+            }
+            processed_post.store_post()?;
         };
 
         repost_set.generate_reply_for_message(msg)

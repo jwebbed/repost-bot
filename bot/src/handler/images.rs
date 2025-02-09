@@ -1,14 +1,15 @@
-use crate::errors::{Error, Result};
+use crate::errors::Result;
 use crate::structs::repost::{RepostSet, RepostType};
+use crate::structs::{AttachmentType, Post, PostProcessor, ProcessedPost};
 
 use db::{get_read_only_db, writable_db_call, ReadOnlyDb, WriteableDb};
 use image::error::ImageError;
 use image::io::Reader;
 use log::{info, warn};
 use phf::phf_set;
-use serenity::model::channel::{Attachment, Embed};
-use serenity::model::prelude::{EmbedThumbnail, Message};
+use serenity::model::channel;
 use std::io::Cursor;
+use std::sync::Arc;
 use std::time::Instant;
 use visual_hash::{HashAlg, HasherConfig, ImageHash};
 
@@ -19,154 +20,119 @@ static IGNORED_PROVIDERS: phf::Set<&'static str> = phf_set! {
 };
 
 #[derive(Debug)]
-pub struct ImageProcesser<'a> {
-    msg_id: u64,
-    server_id: u64,
-    attachments: &'a Vec<Attachment>,
-    embeds: &'a Vec<Embed>,
+pub struct ImageProcessor {
+    post: Post,
 }
 
-impl<'a> ImageProcesser<'a> {
-    pub const fn new(
-        msg_id: u64,
-        server_id: u64,
-        attachments: &'a Vec<Attachment>,
-        embeds: &'a Vec<Embed>,
-    ) -> ImageProcesser<'a> {
-        ImageProcesser {
-            msg_id,
-            server_id,
-            attachments,
-            embeds,
+impl PostProcessor for ImageProcessor {
+    fn new(post: Post) -> ImageProcessor {
+        ImageProcessor { post }
+    }
+
+    async fn process(&self) -> Result<impl ProcessedPost> {
+        if !self.post.has_attachments() {
+            return Ok(None);
         }
-    }
-}
+        let mut hashes = Vec::new();
+        for attachment in self.post.attachments() {
+            let should_process = match &attachment.attachment_type {
+                AttachmentType::Attachment { content_type } => content_type
+                    .as_ref()
+                    .map_or(false, |t| t.starts_with("image")),
 
-impl ImageProcesser<'_> {
-    pub fn from_message(msg: &Message) -> Result<ImageProcesser<'_>> {
-        Ok(ImageProcesser::new(
-            msg.id.into(),
-            msg.guild_id.ok_or(Error::ConstStr("idk"))?.into(),
-            &msg.attachments,
-            &msg.embeds,
-        ))
-    }
+                AttachmentType::EmbedImage { provider } => {
+                    should_process_provider(provider.as_ref())
+                }
+                AttachmentType::EmbedThumbnail { provider, .. } => {
+                    should_process_provider(provider.as_ref())
+                }
+            };
 
-    pub async fn process(&self, include_reply: bool) -> Result<RepostSet> {
-        store_images_direct(
-            self.msg_id,
-            self.server_id,
-            self.attachments,
-            self.embeds,
-            include_reply,
-        )
-        .await
-    }
-}
-
-async fn store_images_direct<'a>(
-    msg_id: u64,
-    server_id: u64,
-    attachments: &'a Vec<Attachment>,
-    embeds: &'a Vec<Embed>,
-    include_reply: bool,
-) -> Result<RepostSet> {
-    let mut hashes = Vec::new();
-    if !attachments.is_empty() {
-        info!("msg {msg_id} has {} attachments", attachments.len());
-    }
-    for attachment in attachments {
-        if attachment
-            .content_type
-            .as_ref()
-            .map_or(true, |t| !t.starts_with("image"))
-        {
-            continue;
-        }
-        let download_time = Instant::now();
-        // need to actually handle download failures at some pointc
-        let bytes = attachment.download().await?;
-        warn!(
-            "msg {msg_id} has attachment with {} bytes downloaded in {:.2?}",
-            bytes.len(),
-            download_time.elapsed()
-        );
-        let parse_time = Instant::now();
-        if let Some(hash) = get_image_hash(&bytes)? {
-            warn!(
-                "msg {msg_id} has attachment with hash {} parsed in {:.2?}",
-                hash.to_base64(),
-                parse_time.elapsed()
-            );
-            hashes.push((hash, &attachment.url));
-        }
-    }
-
-    if !embeds.is_empty() {
-        info!("msg {msg_id} has {} embeds", embeds.len());
-    }
-    for embed in embeds {
-        let provider_name = get_provider_name(embed);
-        if IGNORED_PROVIDERS.contains(provider_name) {
-            info!("provider {provider_name} is ignored, skipping this embed");
-            continue;
-        }
-        info!("provider {provider_name} is not ignored, processing");
-
-        if let Some(embedi) = &embed.image {
-            info!("msg {msg_id} found image embed");
-            if let Some(hash) = download_and_hash(&embedi.url, embedi.proxy_url.as_ref()).await? {
-                hashes.push((hash, &embedi.url));
+            if should_process {
+                // need to actually handle download failures at some pointc
+                let bytes = attachment.download().await?;
+                let parse_time = Instant::now();
+                if let Some(hash) = get_image_hash(bytes)? {
+                    warn!(
+                        "msg {} has attachment with hash {} parsed in {:.2?}",
+                        self.post.id(),
+                        hash.to_base64(),
+                        parse_time.elapsed()
+                    );
+                    hashes.push((hash, attachment.url.clone()));
+                }
             }
-        } else if let Some(embedi) = &embed.thumbnail {
-            info!("msg {msg_id} found thumbnail embed");
+        }
+        Ok(Some(HashedImages {
+            db_message: self.post.db_message,
+            hashes,
+        }))
+        /*
+            } else if let Some(embedi) = &embed.thumbnail {
+                info!("msg {msg_id} found thumbnail embed");
 
-            // Experimentally it seems that, with threads, all profile images are of article "link" and other images are
-            // of kind "article". This may exclude some embeds that are valid reposts, but that seems unlikely.
-            if embed
-                .kind
-                .as_ref()
-                .map(|kind| kind == "link")
-                .unwrap_or(true)
-                && provider_name == "Threads"
-            {
-                if let Some(dimension) = get_square_embed_dimension(embedi) {
-                    if dimension <= 640 {
-                        info!("Found threads thumbnail that is square with side length <= 640 ({dimension}) and of kind \"link\" this is likely a user profile image, ignoring.");
-                        continue;
+                // Experimentally it seems that, with threads, all profile images are of article "link" and other images are
+                // of kind "article". This may exclude some embeds that are valid reposts, but that seems unlikely.
+                if embed
+                    .kind
+                    .as_ref()
+                    .map(|kind| kind == "link")
+                    .unwrap_or(true)
+                    && provider_name == "Threads"
+                {
+                    if let Some(dimension) = get_square_embed_dimension(embedi) {
+                        if dimension <= 640 {
+                            info!("Found threads thumbnail that is square with side length <= 640 ({dimension}) and of kind \"link\" this is likely a user profile image, ignoring.");
+                            continue;
+                        }
                     }
                 }
             }
-
-            if let Some(hash) = download_and_hash(&embedi.url, embedi.proxy_url.as_ref()).await? {
-                hashes.push((hash, &embedi.url));
-            }
-        }
+        }*/
     }
-    let db = get_read_only_db()?;
-    let mut reposts = RepostSet::new();
-    for (hash, url) in hashes {
-        if include_reply {
-            let b64 = hash.to_base64();
-            let matches = db.hash_matches(&b64, server_id, msg_id)?;
-            info!(
-                "for {msg_id} with has {b64} found {} matches",
-                matches.len()
-            );
+}
 
-            for (db_msg, db_hash_b64) in &matches {
-                if let Ok(db_hash) = ImageHash::from_base64(db_hash_b64) {
-                    let distance = hash.dist(&db_hash);
-                    info!("Hamming Distance for db_hash {db_hash_b64} is {distance}");
-                    if distance < 5 {
-                        reposts.add(*db_msg, RepostType::Image);
+struct HashedImages {
+    db_message: db::structs::Message,
+    hashes: Vec<(ImageHash, Arc<str>)>,
+}
+
+impl ProcessedPost for Option<HashedImages> {
+    fn get_reposts(&self) -> Result<RepostSet> {
+        let mut reposts = RepostSet::new();
+        if let Some(HashedImages { db_message, hashes }) = self {
+            let db = get_read_only_db()?;
+            for (hash, _url) in hashes {
+                let b64 = hash.to_base64();
+                let matches = db.hash_matches(&b64, db_message.server, db_message.id)?;
+                info!(
+                    "for {} with has {b64} found {} matches",
+                    db_message.id,
+                    matches.len()
+                );
+
+                for (db_msg, db_hash_b64) in &matches {
+                    if let Ok(db_hash) = ImageHash::from_base64(db_hash_b64) {
+                        let distance = hash.dist(&db_hash);
+                        info!("Hamming Distance for db_hash {db_hash_b64} is {distance}");
+                        if distance < 5 {
+                            reposts.add(*db_msg, RepostType::Image);
+                        }
                     }
                 }
             }
         }
-        writable_db_call(|mut db| db.insert_image(url, &hash.to_base64(), msg_id))?;
+
+        Ok(reposts)
     }
-    Ok(reposts)
+    fn store_post(&self) -> Result<()> {
+        if let Some(HashedImages { db_message, hashes }) = self {
+            for (hash, url) in hashes {
+                writable_db_call(|mut db| db.insert_image(url, &hash.to_base64(), db_message.id))?;
+            }
+        }
+        Ok(())
+    }
 }
 
 // Primarily a seperate function for testing purposes
@@ -178,7 +144,7 @@ fn hash_img(image: &image::DynamicImage) -> ImageHash {
         .hash_image(image)
 }
 
-fn get_image_hash(bytes: &Vec<u8>) -> Result<Option<ImageHash>> {
+fn get_image_hash(bytes: &[u8]) -> Result<Option<ImageHash>> {
     let image = Reader::new(Cursor::new(bytes))
         .with_guessed_format()?
         .decode();
@@ -192,36 +158,18 @@ fn get_image_hash(bytes: &Vec<u8>) -> Result<Option<ImageHash>> {
     Ok(Some(hash_img(&image?)))
 }
 
-async fn download_and_hash(url: &str, proxy_url: Option<&String>) -> Result<Option<ImageHash>> {
-    let req_url = proxy_url.map_or(url, |u| u);
-    let bytes = reqwest::get(req_url).await?.bytes().await?.to_vec();
-    if !bytes.is_empty() {
-        Ok(get_image_hash(&bytes)?)
-    } else {
-        info!("received url with 0 bytes, can't process");
-        Ok(None)
-    }
-}
-
-fn get_provider_name(embed: &Embed) -> &str {
-    if let Some(provider) = &embed.provider {
+fn should_process_provider(provider_option: Option<&channel::EmbedProvider>) -> bool {
+    if let Some(provider) = provider_option {
         if let Some(provider_name) = &provider.name {
-            return provider_name;
+            if IGNORED_PROVIDERS.contains(provider_name) {
+                info!("provider {provider_name} is ignored, skipping this embed");
+                return false;
+            }
+            info!("provider {provider_name} is not ignored, processing");
         }
     }
-    ""
-}
 
-/// Returns side length of embed if embed is square, otherwise none
-fn get_square_embed_dimension(embed: &EmbedThumbnail) -> Option<u32> {
-    // This if will pass even when both width and height are none, however
-    // if we added a check to ensure the option is some, the alternative is
-    // we'd just return None anyways so this works out to be the same result.
-    if embed.width == embed.height {
-        embed.width
-    } else {
-        None
-    }
+    true
 }
 
 #[cfg(test)]
