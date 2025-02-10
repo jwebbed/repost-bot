@@ -213,7 +213,7 @@ fn get_provider_name(embed: &Embed) -> &str {
 }
 
 /// Returns side length of embed if embed is square, otherwise none
-fn get_square_embed_dimension(embed: &EmbedThumbnail) -> Option<u64> {
+fn get_square_embed_dimension(embed: &EmbedThumbnail) -> Option<u32> {
     // This if will pass even when both width and height are none, however
     // if we added a check to ensure the option is some, the alternative is
     // we'd just return None anyways so this works out to be the same result.

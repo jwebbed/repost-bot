@@ -134,14 +134,10 @@ async fn process_message_update<'a>(
             .as_ref()
             .map_or(&attachments_default, |r| r);
 
-        let mut reposts = ImageProcesser::new(
-            msg_id,
-            event.guild_id.unwrap().into(),
-            attachments,
-            embeds,
-        )
-        .process(should_reply)
-        .await?;
+        let mut reposts =
+            ImageProcesser::new(msg_id, event.guild_id.unwrap().into(), attachments, embeds)
+                .process(should_reply)
+                .await?;
         if should_reply && reposts.len() > 0 {
             // need to get any link reposts if we're gonna edit the reply
             reposts.union(&links::get_reposts_for_message_id(msg_id)?);
