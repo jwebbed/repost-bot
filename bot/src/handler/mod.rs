@@ -11,12 +11,13 @@ use images::ImageProcesser;
 use log::{debug, error, info, trace, warn};
 use rand::seq::SliceRandom;
 use rand::{random, thread_rng};
+use serenity::all::GuildMemberUpdateEvent;
 use serenity::{
     async_trait,
     builder::GetMessages,
     cache::Cache,
     model::{
-        channel::{Channel, ChannelType, GuildChannel, Message, MessageType},
+        channel::{ChannelType, GuildChannel, Message, MessageType},
         gateway::Ready,
         guild::Member,
         id::{ChannelId, GuildId, MessageId},
@@ -25,7 +26,6 @@ use serenity::{
     },
     prelude::*,
 };
-use serenity::all::GuildMemberUpdateEvent;
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
@@ -371,7 +371,12 @@ impl EventHandler for Handler {
         );
     }
 
-    async fn channel_update(&self, ctx: Context, _old: Option<GuildChannel>, channel: GuildChannel) {
+    async fn channel_update(
+        &self,
+        ctx: Context,
+        _old: Option<GuildChannel>,
+        channel: GuildChannel,
+    ) {
         let visible = bot_read_channel_permission(&ctx, channel.clone());
         let (id, name, server) = (channel.id, channel.name, channel.guild_id.get());
         info!("received channel update for channel id {id} with name {name} in server {server}, visibility is now: {visible}");
@@ -398,33 +403,36 @@ impl EventHandler for Handler {
         &self,
         _ctx: Context,
         _old_if_available: Option<Member>,
-        new: Member,
+        opt_new: Option<Member>,
         _event: GuildMemberUpdateEvent,
     ) {
-        let db = match get_writeable_db() {
-            Ok(db) => db,
-            Err(why) => {
-                error!("Error getting db: {why:?}");
+        // TODO: make this less terrible
+        if let Some(new) = opt_new {
+            let db = match get_writeable_db() {
+                Ok(db) => db,
+                Err(why) => {
+                    error!("Error getting db: {why:?}");
+                    return;
+                }
+            };
+            let author_id = new.user.id.get();
+            if let Err(why) = db.add_user(
+                author_id,
+                &new.user.name,
+                new.user.bot,
+                new.user.discriminator.map(|val| val.get()),
+            ) {
+                error!("Error adding user: {why:?}");
                 return;
+            }
+
+            if let Some(nickname) = new.nick {
+                if let Err(why) = db.add_nickname(author_id, new.guild_id.get(), &nickname) {
+                    error!("Error adding nickname: {why:?}");
+                    return;
+                }
             }
         };
-        let author_id = new.user.id.get();
-        if let Err(why) = db.add_user(
-            author_id,
-            &new.user.name,
-            new.user.bot,
-            new.user.discriminator.map(|val| val.get()),
-        ) {
-            error!("Error adding user: {why:?}");
-            return;
-        }
-
-        if let Some(nickname) = new.nick {
-            if let Err(why) = db.add_nickname(author_id, new.guild_id.get(), &nickname) {
-                error!("Error adding nickname: {why:?}");
-                return;
-            }
-        }
     }
 
     async fn ready(&self, _: Context, ready: Ready) {
