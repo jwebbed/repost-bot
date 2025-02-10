@@ -45,8 +45,8 @@ impl<'a> ImageProcesser<'a> {
 impl ImageProcesser<'_> {
     pub fn from_message(msg: &Message) -> Result<ImageProcesser<'_>> {
         Ok(ImageProcesser::new(
-            *msg.id.as_u64(),
-            *msg.guild_id.ok_or(Error::ConstStr("idk"))?.as_u64(),
+            msg.id.into(),
+            msg.guild_id.ok_or(Error::ConstStr("idk"))?.into(),
             &msg.attachments,
             &msg.embeds,
         ))

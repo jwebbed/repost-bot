@@ -48,7 +48,7 @@ fn get_links(msg: &str) -> Vec<String> {
 
 pub fn store_links_and_get_reposts(msg: &Message, include_reply: bool) -> Result<RepostSet> {
     let mut reposts = RepostSet::new();
-    let server_id = *msg.guild_id.unwrap().as_u64();
+    let server_id = msg.guild_id.unwrap().get();
     for link in get_links(&msg.content) {
         let filtered_link = match filtered_url(&link) {
             Ok(url) => url,
@@ -66,7 +66,7 @@ pub fn store_links_and_get_reposts(msg: &Message, include_reply: bool) -> Result
         }
 
         // finally insert this link into db
-        writable_db_call(|mut db| db.insert_link(filtered_link.as_str(), *msg.id.as_u64()))?;
+        writable_db_call(|mut db| db.insert_link(filtered_link.as_str(), msg.id.get()))?;
     }
     // if include_reply false len should always be 0
     if reposts.len() > 0 {
