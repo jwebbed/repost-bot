@@ -12,7 +12,7 @@ pub async fn pins<'a>(ctx: &Context, msg: &'a Message) -> Result<Reply<'a>> {
     let channels = guild.channels(&ctx.http).await?;
     let mut pins = Vec::<Message>::new();
     for (_, channel) in channels.iter() {
-        let visible = bot_read_channel_permission(ctx, channel);
+        let visible = bot_read_channel_permission(ctx, channel.clone());
         if visible && channel.kind == ChannelType::Text {
             pins.extend(channel.pins(&ctx.http).await?);
         }
