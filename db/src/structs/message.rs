@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use log::debug;
-use serenity::model::id::{ChannelId, GuildId, MessageId};
+use serenity::model::id::MessageId;
 use std::cmp::Ordering;
 use std::time::Duration;
 
@@ -53,7 +53,7 @@ impl Message {
     /// discord client it will auto scroll to the message
     #[inline(always)]
     pub fn uri(&self) -> String {
-        MessageId(self.id).link(ChannelId(self.channel), Some(GuildId(self.server)))
+        MessageId::new(self.id).link(self.channel.into(), Some(self.server.into()))
     }
 
     #[inline(always)]

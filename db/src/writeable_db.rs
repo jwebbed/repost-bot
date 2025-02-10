@@ -3,9 +3,9 @@ use crate::queries;
 use crate::structs::Message;
 use crate::ReadOnlyDb;
 
+use chrono::{DateTime, Utc};
 use log::{debug, info, warn};
 use rusqlite::{Error, Result};
-use serenity::model::id::{ChannelId, MessageId};
 
 pub trait WriteableDb: GetConnectionMutable + ReadOnlyDb {
     #[inline]
@@ -38,7 +38,7 @@ pub trait WriteableDb: GetConnectionMutable + ReadOnlyDb {
     #[inline]
     fn add_message(
         &self,
-        message_id: MessageId,
+        message_id: u64,
         channel_id: u64,
         server_id: u64,
         author_id: u64,
@@ -51,16 +51,15 @@ pub trait WriteableDb: GetConnectionMutable + ReadOnlyDb {
             WHERE (message.author IS NULL)",
         )?;
 
-        let msg_id64 = *message_id.as_u64();
         stmt.execute((
-            msg_id64,
+            message_id,
             server_id,
             channel_id,
-            *message_id.created_at(),
+            get_snowflake_creation_time(message_id),
             author_id,
         ))?;
 
-        match queries::get_message(conn, msg_id64)? {
+        match queries::get_message(conn, message_id)? {
             Some(msg) => Ok(msg),
             None => {
                 // should return a special error at some point
@@ -104,7 +103,7 @@ pub trait WriteableDb: GetConnectionMutable + ReadOnlyDb {
     }
 
     #[inline]
-    fn mark_message_all_checked(&self, message_id: MessageId) -> Result<()> {
+    fn mark_message_all_checked(&self, message_id: u64) -> Result<()> {
         // will probably want to break this back up to seperate functions
         // at some point just not important right now
         self.execute(
@@ -113,23 +112,23 @@ pub trait WriteableDb: GetConnectionMutable + ReadOnlyDb {
                 parsed_repost=datetime('now'), 
                 parsed_embed=datetime('now')
             WHERE id=(?1)",
-            [*message_id.as_u64()],
+            [message_id],
         )
     }
 
     #[inline]
-    fn mark_message_checked_old(&self, message_id: MessageId) -> Result<()> {
+    fn mark_message_checked_old(&self, message_id: u64) -> Result<()> {
         self.execute(
             "UPDATE message 
             SET checked_old=datetime('now')
             WHERE id=(?1)",
-            [*message_id.as_u64()],
+            [message_id],
         )
     }
 
     #[inline]
-    fn delete_message(&self, message_id: MessageId) -> Result<()> {
-        self.execute("DELETE FROM message WHERE id=(?1)", [*message_id.as_u64()])
+    fn delete_message(&self, message_id: u64) -> Result<()> {
+        self.execute("DELETE FROM message WHERE id=(?1)", [message_id])
     }
 
     // Soft delete is for when we query for a message, but get no result,
@@ -182,19 +181,16 @@ pub trait WriteableDb: GetConnectionMutable + ReadOnlyDb {
     }
 
     #[inline]
-    fn update_channel_visibility(&self, channel_id: ChannelId, visible: bool) -> Result<()> {
+    fn update_channel_visibility(&self, channel_id: u64, visible: bool) -> Result<()> {
         self.execute(
             "UPDATE channel SET visible = (?1) WHERE id = (?2)",
-            (visible, *channel_id.as_u64()),
+            (visible, channel_id),
         )
     }
 
     #[inline]
-    fn delete_channel(&self, channel_id: ChannelId) -> Result<()> {
-        self.execute(
-            "DELETE FROM channel WHERE id = (?1)",
-            [*channel_id.as_u64()],
-        )
+    fn delete_channel(&self, channel_id: u64) -> Result<()> {
+        self.execute("DELETE FROM channel WHERE id = (?1)", [channel_id])
     }
 
     #[inline]
@@ -268,4 +264,13 @@ pub trait WriteableDb: GetConnectionMutable + ReadOnlyDb {
         stmt.execute([message_id, channel_id, replied_id])?;
         Ok(())
     }
+}
+
+/// Discord's epoch starts at "2015-01-01T00:00:00+00:00"
+const DISCORD_EPOCH: u64 = 1_420_070_400_000;
+
+#[inline(always)]
+fn get_snowflake_creation_time(snowflake: u64) -> DateTime<Utc> {
+    DateTime::from_timestamp_millis(((snowflake >> 22) + DISCORD_EPOCH) as i64)
+        .expect("somehow received an invalid snowflake")
 }
