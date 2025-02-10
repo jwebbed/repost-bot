@@ -13,6 +13,7 @@ use rand::seq::SliceRandom;
 use rand::{random, thread_rng};
 use serenity::{
     async_trait,
+    builder::GetMessages,
     cache::Cache,
     model::{
         channel::{Channel, ChannelType, GuildChannel, Message, MessageType},
@@ -22,9 +23,9 @@ use serenity::{
         permissions::Permissions,
         prelude::MessageUpdateEvent,
     },
-    builder::GetMessages,
     prelude::*,
 };
+use serenity::all::GuildMemberUpdateEvent;
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
@@ -43,7 +44,7 @@ fn regular_text_msg(kind: MessageType) -> bool {
     kind == MessageType::Regular || kind == MessageType::InlineReply
 }
 
-pub fn bot_read_channel_permission(cache: impl AsRef<Cache>, channel: &GuildChannel) -> bool {
+pub fn bot_read_channel_permission(cache: impl AsRef<Cache>, channel: GuildChannel) -> bool {
     let current_user_id = cache.as_ref().current_user().id;
     match channel.permissions_for_user(cache, current_user_id) {
         Ok(permissions) => {
@@ -70,7 +71,7 @@ async fn process_discord_message(ctx: &Context, msg: &Message) -> Result<db::str
         msg.author.id.into(),
         &msg.author.name,
         msg.author.bot,
-        msg.author.discriminator,
+        msg.author.discriminator.map(|val| val.get()),
     )?;
 
     let server = msg
@@ -82,11 +83,11 @@ async fn process_discord_message(ctx: &Context, msg: &Message) -> Result<db::str
 
     // get channel id and load message
     let channel_id = msg.channel_id.into();
-    let channel_name = msg.channel_id.name(&ctx.cache).await;
+    let channel_name = msg.channel_id.name(&ctx).await;
     // we can assume channel is visible if we are receiving messages for it
     db.update_channel(channel_id, server_id, &channel_name.unwrap(), true)?;
 
-    let ret = db.add_message(msg.id, channel_id, server_id, author_id)?;
+    let ret = db.add_message(msg.id.into(), channel_id, server_id, msg.author.id.into())?;
 
     trace!(
         "process_discord_message time elapsed: {:.2?}",
@@ -107,7 +108,7 @@ async fn process_message_update<'a>(
         warn!("Received message update on msg_id {msg_id} with no guild_id, can't process");
         return Ok(None);
     }
-    let db_msg_maybe = get_read_only_db()?.get_message(event.id)?;
+    let db_msg_maybe = get_read_only_db()?.get_message(event.id.into())?;
     if db_msg_maybe.is_none() {
         warn!("Received message update on msg_id {msg_id} but haven't already processed message, can't process");
         return Ok(None);
@@ -179,7 +180,7 @@ async fn process_message<'a>(
         repost_set.generate_reply_for_message(msg)
     };
 
-    get_writeable_db()?.mark_message_all_checked(msg.id)?;
+    get_writeable_db()?.mark_message_all_checked(msg.id.into())?;
 
     Ok(ret)
 }
@@ -222,7 +223,6 @@ async fn process_old_messages(ctx: &Context, server_id: u64) -> Result<usize> {
         }
     };
 
-    //let messages = ctx.http.messages(channel_id, &query).await?;
     let messages = ChannelId::new(channel_id).messages(ctx, query).await?;
     let db = get_writeable_db()?;
     if !messages.is_empty() {
@@ -356,8 +356,8 @@ impl EventHandler for Handler {
         };
     }
 
-    async fn channel_create(&self, ctx: Context, channel: &GuildChannel) {
-        let visible = bot_read_channel_permission(&ctx, channel);
+    async fn channel_create(&self, ctx: Context, channel: GuildChannel) {
+        let visible = bot_read_channel_permission(&ctx, channel.clone());
         log_error(
             writable_db_call(|db| {
                 db.update_channel(
@@ -371,24 +371,22 @@ impl EventHandler for Handler {
         );
     }
 
-    async fn channel_update(&self, ctx: Context, _old: Option<Channel>, new: Channel) {
-        match new.guild() {
-            Some(channel) => {
-                let visible = bot_read_channel_permission(&ctx, &channel);
-                let (id, name, server) = (channel.id, channel.name, channel.guild_id.get());
-                info!("received channel update for channel id {id} with name {name} in server {server}, visibility is now: {visible}");
-                log_error(
-                    writable_db_call(|db| db.update_channel_visibility(channel.id.into(), visible)),
-                    "Updating visibility",
-                );
-            }
-            None => {
-                warn!("It's not a guild!");
-            }
-        }
+    async fn channel_update(&self, ctx: Context, _old: Option<GuildChannel>, channel: GuildChannel) {
+        let visible = bot_read_channel_permission(&ctx, channel.clone());
+        let (id, name, server) = (channel.id, channel.name, channel.guild_id.get());
+        info!("received channel update for channel id {id} with name {name} in server {server}, visibility is now: {visible}");
+        log_error(
+            writable_db_call(|db| db.update_channel_visibility(channel.id.into(), visible)),
+            "Updating visibility",
+        );
     }
 
-    async fn channel_delete(&self, _ctx: Context, channel: &GuildChannel) {
+    async fn channel_delete(
+        &self,
+        _ctx: Context,
+        channel: GuildChannel,
+        _messages: Option<Vec<serenity::all::Message>>,
+    ) {
         trace!("recieved channel delete for {channel:?}");
         log_error(
             writable_db_call(|db| db.delete_channel(channel.id.into())),
@@ -401,6 +399,7 @@ impl EventHandler for Handler {
         _ctx: Context,
         _old_if_available: Option<Member>,
         new: Member,
+        _event: GuildMemberUpdateEvent,
     ) {
         let db = match get_writeable_db() {
             Ok(db) => db,
@@ -502,7 +501,7 @@ impl EventHandler for Handler {
                     // insert all channels to update names and build visibility map
                     let mut visibility_map = HashMap::with_capacity(channels.len());
                     for (id, channel) in channels.clone() {
-                        let visible = bot_read_channel_permission(ctx, &channel);
+                        let visible = bot_read_channel_permission(ctx, channel.clone());
                         visibility_map.insert(id, visible);
                         log_error(
                             db.update_channel(

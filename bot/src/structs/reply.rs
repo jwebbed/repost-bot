@@ -3,7 +3,6 @@ use crate::errors::{Error, Result};
 use db::{read_only_db_call, writable_db_call, ReadOnlyDb, WriteableDb};
 use log::info;
 use serde_json::json;
-use serenity::builder::ParseValue;
 use serenity::builder::{CreateAllowedMentions, CreateMessage};
 use serenity::model;
 use serenity::model::channel::MessageReference;
@@ -97,8 +96,8 @@ async fn edit_reply(ctx: &Context, db_reply: &db::structs::Reply, content: &str)
     info!("Editing reply w/ id {}", db_reply.id);
     ctx.http
         .edit_message(
-            ChannelId::new(db_reply.channel),
-            MessageId::new(db_reply.id),
+            model::id::ChannelId::new(db_reply.channel),
+            model::id::MessageId::new(db_reply.id),
             &json!({ "content": content }),
             vec![],
         )
