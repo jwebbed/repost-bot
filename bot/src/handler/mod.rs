@@ -66,9 +66,8 @@ async fn process_discord_message(ctx: &Context, msg: &Message) -> Result<db::str
 
     let db = get_writeable_db()?;
 
-    let author_id = *msg.author.id.as_u64();
     db.add_user(
-        author_id,
+        msg.author.id.into(),
         &msg.author.name,
         msg.author.bot,
         msg.author.discriminator,
@@ -77,12 +76,12 @@ async fn process_discord_message(ctx: &Context, msg: &Message) -> Result<db::str
     let server = msg
         .guild_id
         .ok_or(Error::ConstStr("Guild id doesn't exist on message"))?;
-    let server_id = *server.as_u64();
+    let server_id = server.into();
     let server_name = &server.name(ctx);
     db.update_server(server_id, server_name)?;
 
     // get channel id and load message
-    let channel_id = *msg.channel_id.as_u64();
+    let channel_id = msg.channel_id.into();
     let channel_name = msg.channel_id.name(&ctx.cache).await;
     // we can assume channel is visible if we are receiving messages for it
     db.update_channel(channel_id, server_id, &channel_name.unwrap(), true)?;
@@ -103,7 +102,7 @@ async fn process_message_update<'a>(
     _new: &Option<Message>,
     event: &'a MessageUpdateEvent,
 ) -> Result<Option<Reply<'a>>> {
-    let msg_id = *event.id.as_u64();
+    let msg_id = event.id.get();
     if event.guild_id.is_none() {
         warn!("Received message update on msg_id {msg_id} with no guild_id, can't process");
         return Ok(None);
@@ -137,7 +136,7 @@ async fn process_message_update<'a>(
 
         let mut reposts = ImageProcesser::new(
             msg_id,
-            *event.guild_id.unwrap().as_u64(),
+            event.guild_id.unwrap().into(),
             attachments,
             embeds,
         )
@@ -197,7 +196,7 @@ async fn process_discord_message_slow(ctx: &Context, msg: &Message) -> Result<()
 
     if let Some(nickname) = msg.author.nick_in(ctx, server_id).await {
         let db = get_writeable_db()?;
-        db.add_nickname(*msg.author.id.as_u64(), *server_id.as_u64(), &nickname)?;
+        db.add_nickname(msg.author.id.into(), server_id.into(), &nickname)?;
     }
 
     Ok(())
@@ -234,7 +233,7 @@ async fn process_old_messages(ctx: &Context, server_id: &u64) -> Result<usize> {
         info!("received {len} messages for channel id: {channel_id} and query_string {query}");
         let mut ids = HashSet::with_capacity(len);
         for mut msg in messages {
-            let id = *msg.id.as_u64();
+            let id = msg.id.get();
             ids.insert(id);
 
             if msg.author.bot || !regular_text_msg(msg.kind) {
@@ -350,11 +349,11 @@ impl EventHandler for Handler {
         match db.delete_message(message_id) {
             Ok(_) => info!(
                 "successfully deleted message id {} from db",
-                *message_id.as_u64()
+                message_id.get()
             ),
             Err(why) => error!(
                 "failed to delete message id {} with following error {:?}",
-                message_id.as_u64(),
+                message_id.get(),
                 why
             ),
         };
@@ -365,8 +364,8 @@ impl EventHandler for Handler {
         log_error(
             writable_db_call(|db| {
                 db.update_channel(
-                    *channel.id.as_u64(),
-                    *channel.guild_id.as_u64(),
+                    channel.id.get(),
+                    channel.guild_id.get(),
                     &channel.name,
                     visible,
                 )
@@ -379,7 +378,7 @@ impl EventHandler for Handler {
         match new.guild() {
             Some(channel) => {
                 let visible = bot_read_channel_permission(&ctx, &channel);
-                let (id, name, server) = (channel.id, channel.name, *channel.guild_id.as_u64());
+                let (id, name, server) = (channel.id, channel.name, channel.guild_id.get());
                 info!("received channel update for channel id {id} with name {name} in server {server}, visibility is now: {visible}");
                 log_error(
                     writable_db_call(|db| db.update_channel_visibility(channel.id, visible)),
@@ -413,7 +412,7 @@ impl EventHandler for Handler {
                 return;
             }
         };
-        let author_id = *new.user.id.as_u64();
+        let author_id = new.user.id.get();
         if let Err(why) = db.add_user(
             author_id,
             &new.user.name,
@@ -425,7 +424,7 @@ impl EventHandler for Handler {
         }
 
         if let Some(nickname) = new.nick {
-            if let Err(why) = db.add_nickname(author_id, *new.guild_id.as_u64(), &nickname) {
+            if let Err(why) = db.add_nickname(author_id, new.guild_id.get(), &nickname) {
                 error!("Error adding nickname: {why:?}");
                 return;
             }
@@ -450,11 +449,11 @@ impl EventHandler for Handler {
             let server_name = guild.name(ctx);
 
             log_error(
-                db.update_server(*guild.as_u64(), &server_name),
+                db.update_server(guild.get(), &server_name),
                 "Update server name from cache_ready",
             );
 
-            let g = *guild.as_u64();
+            let g = guild.get();
             tokio::spawn(async move {
                 loop {
                     let tts = match process_old_messages(ctx, &g).await {
@@ -510,8 +509,8 @@ impl EventHandler for Handler {
                         visibility_map.insert(id, visible);
                         log_error(
                             db.update_channel(
-                                *channel.id.as_u64(),
-                                *channel.guild_id.as_u64(),
+                                channel.id.get(),
+                                channel.guild_id.get(),
                                 &channel.name,
                                 visible,
                             ),
@@ -523,7 +522,7 @@ impl EventHandler for Handler {
                     for id in channels
                         .keys()
                         .filter(|id| *visibility_map.get(id).unwrap_or(&true))
-                        .map(|id| *id.as_u64())
+                        .map(|id| id.get())
                     {
                         match ctx.http.get_messages(id, "?limit=1").await {
                             Ok(mut msg_vec) => {
@@ -531,10 +530,10 @@ impl EventHandler for Handler {
                                     if !msg.author.bot {
                                         log_error(
                                             db.add_message(
-                                                msg.id,
-                                                *msg.channel_id.as_u64(),
-                                                *guild.as_u64(),
-                                                *msg.author.id.as_u64(),
+                                                msg.id.into(),
+                                                msg.channel_id.into(),
+                                                guild.into(),
+                                                msg.author.id.into(),
                                             ),
                                             "db add message",
                                         );
@@ -549,7 +548,7 @@ impl EventHandler for Handler {
                 }
                 Err(why) => error!(
                     "failed to load channels for guild {} with error {why:?}",
-                    *guild.as_u64()
+                    guild.get()
                 ),
             }
         }
