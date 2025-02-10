@@ -4,6 +4,7 @@ use db::{read_only_db_call, writable_db_call, ReadOnlyDb, WriteableDb};
 use log::info;
 use serde_json::json;
 use serenity::builder::ParseValue;
+use serenity::builder::{CreateAllowedMentions, CreateMessage};
 use serenity::model;
 use serenity::model::channel::MessageReference;
 use serenity::prelude::Context;
@@ -64,22 +65,12 @@ impl Reply<'_> {
                 if let Some(db_reply) = read_only_db_call(|db| db.get_reply(msg_id.get()))? {
                     edit_reply(ctx, &db_reply, resp).await?;
                 } else {
-                    // The following code is essentially entirely copied from serenity (the library being used)
-                    // codebase directly. It is licensed under ISC, I think it is fine to use it here. They
-                    // own the copyright, etc.alloc
-                    let reply = channel_id
-                        .send_message(ctx, |builder| {
-                            builder
-                                .reference_message(MessageReference::from((*channel_id, *msg_id)))
-                                .allowed_mentions(|f| {
-                                    f.replied_user(false)
-                                        .parse(ParseValue::Everyone)
-                                        .parse(ParseValue::Users)
-                                        .parse(ParseValue::Roles)
-                                });
-                            builder.content(resp)
-                        })
-                        .await?;
+                    let allowed_mentions = CreateAllowedMentions::new().replied_user(false);
+                    let message_builder = CreateMessage::new()
+                        .reference_message(MessageReference::from((*channel_id, *msg_id)))
+                        .allowed_mentions(allowed_mentions)
+                        .content(resp);
+                    let reply = channel_id.send_message(ctx, message_builder).await?;
                     self.store_reply(reply.id)?;
                 }
             }
@@ -91,9 +82,7 @@ impl Reply<'_> {
     fn store_reply(&self, reply_id: model::id::MessageId) -> Result<()> {
         let (replied_to, channel_id) = match &self.place {
             ReplyType::Message(msg) => Ok((msg.id.get(), msg.channel_id.get())),
-            ReplyType::MessageId(msg_id, channel_id) => {
-                Ok((msg_id.get(), channel_id.get()))
-            }
+            ReplyType::MessageId(msg_id, channel_id) => Ok((msg_id.get(), channel_id.get())),
             _ => Err(Error::ConstStr(
                 "Can't store reply if not replying to a message",
             )),
@@ -108,9 +97,10 @@ async fn edit_reply(ctx: &Context, db_reply: &db::structs::Reply, content: &str)
     info!("Editing reply w/ id {}", db_reply.id);
     ctx.http
         .edit_message(
-            db_reply.channel,
-            db_reply.id,
+            ChannelId::new(db_reply.channel),
+            MessageId::new(db_reply.id),
             &json!({ "content": content }),
+            vec![],
         )
         .await?;
     Ok(())
