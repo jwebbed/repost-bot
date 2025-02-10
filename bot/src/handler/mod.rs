@@ -522,7 +522,6 @@ impl EventHandler for Handler {
                     for id in channels
                         .keys()
                         .filter(|id| *visibility_map.get(id).unwrap_or(&true))
-                        .map(|id| id.get())
                     {
                         match ctx.http.get_messages(id, "?limit=1").await {
                             Ok(mut msg_vec) => {
