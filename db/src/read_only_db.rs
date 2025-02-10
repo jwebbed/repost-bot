@@ -3,7 +3,6 @@ use crate::queries;
 use crate::structs::{Channel, Link, Message, Reply, RepostCount, ReposterCount};
 
 use rusqlite::{OptionalExtension, Result, Row};
-use serenity::model::id::{ChannelId, GuildId, MessageId};
 
 #[inline(always)]
 fn extract_first_result<I, T>(iter: &mut I) -> Result<Option<T>>
@@ -21,8 +20,8 @@ where
 
 pub trait ReadOnlyDb: GetConnectionImmutable {
     #[inline]
-    fn get_message(&self, message_id: MessageId) -> Result<Option<Message>> {
-        queries::get_message(self.get_connection(), *message_id.as_u64())
+    fn get_message(&self, message_id: u64) -> Result<Option<Message>> {
+        queries::get_message(self.get_connection(), message_id)
     }
 
     #[inline]
@@ -82,13 +81,11 @@ pub trait ReadOnlyDb: GetConnectionImmutable {
     }
 
     #[inline]
-    fn get_channel_list(&self, server_id: GuildId) -> Result<Vec<(ChannelId, String)>> {
+    fn get_channel_list(&self, server_id: u64) -> Result<Vec<(u64, String)>> {
         let mut stmt = self
             .get_connection()
             .prepare("SELECT id, name FROM channel where server = (?1)")?;
-        let rows = stmt.query_map([*server_id.as_u64()], |row| {
-            Ok((ChannelId(row.get(0)?), row.get(1)?))
-        })?;
+        let rows = stmt.query_map([server_id], |row| Ok((row.get(0)?, row.get(1)?)))?;
         let mut links = Vec::new();
         for row in rows {
             links.push(row?)
