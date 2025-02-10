@@ -11,7 +11,6 @@ use images::ImageProcesser;
 use log::{debug, error, info, trace, warn};
 use rand::seq::SliceRandom;
 use rand::{random, thread_rng};
-
 use serenity::{
     async_trait,
     cache::Cache,
@@ -23,6 +22,7 @@ use serenity::{
         permissions::Permissions,
         prelude::MessageUpdateEvent,
     },
+    builder::GetMessages,
     prelude::*,
 };
 use std::collections::{HashMap, HashSet};
@@ -198,13 +198,13 @@ async fn process_discord_message_slow(ctx: &Context, msg: &Message) -> Result<()
     Ok(())
 }
 
-async fn process_old_messages(ctx: &Context, server_id: &u64) -> Result<usize> {
-    const LIMIT: u64 = 50;
+async fn process_old_messages(ctx: &Context, server_id: u64) -> Result<usize> {
+    const LIMIT: u8 = 50;
     let db = get_read_only_db()?;
-    let (channel_id, query, base_msg) = match db.get_newest_unchecked_message(*server_id)? {
+    let (channel_id, query, base_msg) = match db.get_newest_unchecked_message(server_id)? {
         Some(msg) => (
             msg.channel,
-            format!("?limit={LIMIT}&around={}", msg.id),
+            GetMessages::new().around(msg.id).limit(LIMIT),
             Some(msg.id),
         ),
         None => {
@@ -212,21 +212,22 @@ async fn process_old_messages(ctx: &Context, server_id: &u64) -> Result<usize> {
             if random::<f64>() > 0.015 {
                 return Ok(0);
             }
-            let channels = db.get_known_channels(*server_id)?;
+            let channels = db.get_known_channels(server_id)?;
             let mut rng = thread_rng();
             let channel = channels
                 .choose(&mut rng)
                 .ok_or(Error::ConstStr("Rng choose failed for some reason"))?;
 
-            (channel.id, format!("?limit={LIMIT}"), None)
+            (channel.id, GetMessages::new().limit(LIMIT), None)
         }
     };
 
-    let messages = ctx.http.get_messages(channel_id, &query).await?;
+    //let messages = ctx.http.messages(channel_id, &query).await?;
+    let messages = ChannelId::new(channel_id).messages(ctx, query).await?;
     let db = get_writeable_db()?;
     if !messages.is_empty() {
         let len = messages.len();
-        info!("received {len} messages for channel id: {channel_id} and query_string {query}");
+        info!("received {len} messages for channel id: {channel_id} and query_string {query:?}");
         let mut ids = HashSet::with_capacity(len);
         for mut msg in messages {
             let id = msg.id.get();
@@ -240,9 +241,9 @@ async fn process_old_messages(ctx: &Context, server_id: &u64) -> Result<usize> {
                     }
                 }
             } else {
-                let db_msg_maybe = db.get_message(msg.id)?;
+                let db_msg_maybe = db.get_message(msg.id.into())?;
                 if msg.guild_id.is_none() {
-                    msg.guild_id = Some(GuildId(*server_id));
+                    msg.guild_id = Some(GuildId::new(server_id));
                 }
                 if let Err(why) = process_message(ctx, &msg, false).await {
                     warn!("Failed to process old message {} with error {why:?}", id);
@@ -251,7 +252,7 @@ async fn process_old_messages(ctx: &Context, server_id: &u64) -> Result<usize> {
                 if let Some(db_msg) = db_msg_maybe {
                     if !db_msg.is_deleted() && !db_msg.is_checked_old() {
                         // mark as checked old if we had this in the db before processing just now
-                        db.mark_message_checked_old(msg.id)?;
+                        db.mark_message_checked_old(msg.id.get())?;
                     }
                 } else {
                     debug!(
@@ -452,7 +453,7 @@ impl EventHandler for Handler {
             let g = guild.get();
             tokio::spawn(async move {
                 loop {
-                    let tts = match process_old_messages(ctx, &g).await {
+                    let tts = match process_old_messages(ctx, g).await {
                         Ok(val) => {
                             if val == 0 {
                                 10 * 60
