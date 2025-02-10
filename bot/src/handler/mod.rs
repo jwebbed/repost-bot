@@ -346,7 +346,7 @@ impl EventHandler for Handler {
             }
         };
 
-        match db.delete_message(message_id) {
+        match db.delete_message(message_id.into()) {
             Ok(_) => info!(
                 "successfully deleted message id {} from db",
                 message_id.get()
@@ -381,7 +381,7 @@ impl EventHandler for Handler {
                 let (id, name, server) = (channel.id, channel.name, channel.guild_id.get());
                 info!("received channel update for channel id {id} with name {name} in server {server}, visibility is now: {visible}");
                 log_error(
-                    writable_db_call(|db| db.update_channel_visibility(channel.id, visible)),
+                    writable_db_call(|db| db.update_channel_visibility(channel.id.into(), visible)),
                     "Updating visibility",
                 );
             }
@@ -394,7 +394,7 @@ impl EventHandler for Handler {
     async fn channel_delete(&self, _ctx: Context, channel: &GuildChannel) {
         trace!("recieved channel delete for {channel:?}");
         log_error(
-            writable_db_call(|db| db.delete_channel(channel.id)),
+            writable_db_call(|db| db.delete_channel(channel.id.into())),
             "Db delete channel",
         );
     }
@@ -491,12 +491,12 @@ impl EventHandler for Handler {
                         .collect::<Vec<String>>();
 
                     info!("found server with id {guild} and channels {channel_list:?}");
-                    let channels_stored = match db.get_channel_list(guild) {
+                    let channels_stored = match db.get_channel_list(guild.into()) {
                         Ok(cs) => HashMap::from_iter(cs),
                         Err(_why) => HashMap::new(),
                     };
                     for (id, name) in channels_stored.clone() {
-                        if !channels.contains_key(&id) {
+                        if !channels.contains_key(&ChannelId::new(id)) {
                             warn!("stored channel {name} with id {id} no longer exists on server, deleting");
                             log_error(db.delete_channel(id), "Db delete channel");
                         }
@@ -523,7 +523,7 @@ impl EventHandler for Handler {
                         .keys()
                         .filter(|id| *visibility_map.get(id).unwrap_or(&true))
                     {
-                        match ctx.http.get_messages(id, "?limit=1").await {
+                        match ctx.http.get_messages(*id, None, Some(1)).await {
                             Ok(mut msg_vec) => {
                                 if let Some(msg) = msg_vec.pop() {
                                     if !msg.author.bot {
