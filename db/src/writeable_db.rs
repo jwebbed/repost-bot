@@ -70,7 +70,7 @@ pub trait WriteableDb: GetConnectionMutable + ReadOnlyDb {
     }
 
     #[inline]
-    fn add_user(&self, user_id: u64, username: &str, bot: bool, discriminator: u16) -> Result<()> {
+    fn add_user(&self, user_id: u64, username: &str, bot: bool, discriminator: Option<u16>) -> Result<()> {
         let mut stmt = self.get_connection().prepare(
             "INSERT INTO user (id, username, bot, discriminator) 
             VALUES ( ?1, ?2, ?3, ?4 )
@@ -85,7 +85,7 @@ pub trait WriteableDb: GetConnectionMutable + ReadOnlyDb {
             )",
         )?;
 
-        stmt.execute((user_id, username, bot, discriminator))?;
+        stmt.execute((user_id, username, bot, discriminator.unwrap_or(0)))?;
 
         Ok(())
     }

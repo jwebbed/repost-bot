@@ -417,7 +417,7 @@ impl EventHandler for Handler {
             author_id,
             &new.user.name,
             new.user.bot,
-            new.user.discriminator,
+            new.user.discriminator.map(|val| val.get()),
         ) {
             error!("Error adding user: {why:?}");
             return;
