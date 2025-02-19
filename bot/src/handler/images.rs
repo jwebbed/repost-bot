@@ -7,7 +7,6 @@ use image::error::ImageError;
 use image::io::Reader;
 use log::{info, warn};
 use phf::phf_set;
-use serenity::model::channel;
 use std::io::Cursor;
 use std::sync::Arc;
 use std::time::Instant;
@@ -24,6 +23,11 @@ pub struct ImageProcessor {
     post: Post,
 }
 
+struct HashedImages {
+    db_message: db::structs::Message,
+    hashes: Vec<(ImageHash, Arc<str>)>,
+}
+
 impl PostProcessor for ImageProcessor {
     fn new(post: Post) -> ImageProcessor {
         ImageProcessor { post }
@@ -35,20 +39,7 @@ impl PostProcessor for ImageProcessor {
         }
         let mut hashes = Vec::new();
         for attachment in self.post.attachments() {
-            let should_process = match &attachment.attachment_type {
-                AttachmentType::Attachment { content_type } => content_type
-                    .as_ref()
-                    .map_or(false, |t| t.starts_with("image")),
-
-                AttachmentType::EmbedImage { provider } => {
-                    should_process_provider(provider.as_ref())
-                }
-                AttachmentType::EmbedThumbnail { provider, .. } => {
-                    should_process_provider(provider.as_ref())
-                }
-            };
-
-            if should_process {
+            if should_process(&attachment.attachment_type) {
                 // need to actually handle download failures at some pointc
                 let bytes = attachment.download().await?;
                 let parse_time = Instant::now();
@@ -67,34 +58,7 @@ impl PostProcessor for ImageProcessor {
             db_message: self.post.db_message,
             hashes,
         }))
-        /*
-            } else if let Some(embedi) = &embed.thumbnail {
-                info!("msg {msg_id} found thumbnail embed");
-
-                // Experimentally it seems that, with threads, all profile images are of article "link" and other images are
-                // of kind "article". This may exclude some embeds that are valid reposts, but that seems unlikely.
-                if embed
-                    .kind
-                    .as_ref()
-                    .map(|kind| kind == "link")
-                    .unwrap_or(true)
-                    && provider_name == "Threads"
-                {
-                    if let Some(dimension) = get_square_embed_dimension(embedi) {
-                        if dimension <= 640 {
-                            info!("Found threads thumbnail that is square with side length <= 640 ({dimension}) and of kind \"link\" this is likely a user profile image, ignoring.");
-                            continue;
-                        }
-                    }
-                }
-            }
-        }*/
     }
-}
-
-struct HashedImages {
-    db_message: db::structs::Message,
-    hashes: Vec<(ImageHash, Arc<str>)>,
 }
 
 impl ProcessedPost for Option<HashedImages> {
@@ -158,18 +122,40 @@ fn get_image_hash(bytes: &[u8]) -> Result<Option<ImageHash>> {
     Ok(Some(hash_img(&image?)))
 }
 
-fn should_process_provider(provider_option: Option<&channel::EmbedProvider>) -> bool {
-    if let Some(provider) = provider_option {
-        if let Some(provider_name) = &provider.name {
-            if IGNORED_PROVIDERS.contains(provider_name) {
-                info!("provider {provider_name} is ignored, skipping this embed");
-                return false;
-            }
-            info!("provider {provider_name} is not ignored, processing");
-        }
-    }
+fn should_process(attachment_type: &AttachmentType) -> bool {
+    // Match block in order so the order is intentionally set to the most to least specific.
+    match attachment_type {
+        AttachmentType::Attachment { content_type } => content_type
+            .as_ref()
+            .map_or(false, |t| t.starts_with("image")),
 
-    true
+        AttachmentType::EmbedImage {
+            provider_name: Some(provider_name),
+        } => should_process_provider(provider_name),
+        AttachmentType::EmbedImage {
+            provider_name: None,
+        } => true,
+
+        // Experimentally it seems that, with threads, all profile images are of article "link" and other images are
+        // of kind "article". This may exclude some embeds that are valid reposts, but that seems unlikely.
+        AttachmentType::EmbedThumbnail {
+            provider_name: Some(provider_name),
+            square_dimension: Some(dimension),
+            is_link_type: true,
+        } => **provider_name != *"Threads" || *dimension > 640,
+        AttachmentType::EmbedThumbnail {
+            provider_name: Some(provider_name),
+            ..
+        } => should_process_provider(provider_name),
+        AttachmentType::EmbedThumbnail {
+            provider_name: None,
+            ..
+        } => true,
+    }
+}
+
+fn should_process_provider(provider_name: &str) -> bool {
+    !IGNORED_PROVIDERS.contains(provider_name)
 }
 
 #[cfg(test)]

@@ -15,10 +15,10 @@ pub enum AttachmentType {
         content_type: Option<String>,
     },
     EmbedImage {
-        provider: Option<channel::EmbedProvider>,
+        provider_name: Option<Box<str>>,
     },
     EmbedThumbnail {
-        provider: Option<channel::EmbedProvider>,
+        provider_name: Option<Box<str>>,
         square_dimension: Option<u32>,
         is_link_type: bool,
     },
@@ -51,7 +51,7 @@ impl Attachment {
     pub fn from_embed_image(embed: &channel::Embed, image: &channel::EmbedImage) -> Attachment {
         Self::from_embed(
             AttachmentType::EmbedImage {
-                provider: embed.provider.clone(),
+                provider_name: get_provider_name(embed.provider.as_ref()),
             },
             &image.proxy_url,
             &image.url,
@@ -65,7 +65,7 @@ impl Attachment {
     ) -> Attachment {
         Self::from_embed(
             AttachmentType::EmbedThumbnail {
-                provider: embed.provider.clone(),
+                provider_name: get_provider_name(embed.provider.as_ref()),
                 square_dimension: get_square_embed_dimension(image),
                 is_link_type: embed.kind.as_ref().map_or(false, |kind| kind == "link"),
             },
@@ -210,4 +210,11 @@ fn get_square_embed_dimension(embed: &channel::EmbedThumbnail) -> Option<u32> {
     } else {
         None
     }
+}
+
+#[inline(always)]
+fn get_provider_name(provider_option: Option<&channel::EmbedProvider>) -> Option<Box<str>> {
+    provider_option
+        .and_then(|provider| provider.name.clone())
+        .map(|name| name.into_boxed_str())
 }
