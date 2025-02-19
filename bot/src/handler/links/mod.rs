@@ -5,7 +5,9 @@ use crate::structs::repost::{RepostSet, RepostType};
 use crate::structs::{Post, PostProcessor, ProcessedPost};
 use filter::filtered_url;
 
-use db::{read_only_db_call, get_read_only_db, structs::Link, writable_db_call, ReadOnlyDb, WriteableDb};
+use db::{
+    get_read_only_db, read_only_db_call, writable_db_call, ReadOnlyDb, WriteableDb,
+};
 use lazy_static::lazy_static;
 use linkify::{LinkFinder, LinkKind};
 use log::{error, info};
@@ -112,10 +114,14 @@ mod tests {
     use super::*;
     #[test]
     fn test_extract_link() {
-        let links = get_links("test msg with link https://twitter.com/user/status/idnumber?s=20").collect::<Vec<_>>();
+        let links = get_links("test msg with link https://twitter.com/user/status/idnumber?s=20")
+            .collect::<Vec<_>>();
 
         assert_eq!(links.len(), 1);
-        assert_eq!(links[0], "https://twitter.com/user/status/idnumber?s=20".into());
+        assert_eq!(
+            links[0],
+            "https://twitter.com/user/status/idnumber?s=20".into()
+        );
     }
 
     #[test]
@@ -123,7 +129,8 @@ mod tests {
         let links = get_links(
             "test msg with link https://twitter.com/user/status/idnumber?s=20 and
              another link https://www.bbc.com/news/article",
-        ).collect::<Vec<_>>();
+        )
+        .collect::<Vec<_>>();
 
         assert_eq!(links.len(), 2);
         assert!(links.contains(&"https://twitter.com/user/status/idnumber?s=20".into()));
@@ -138,7 +145,8 @@ mod tests {
             and also ignore tenor https://tenor.com/view/gif-name
              another link https://www.bbc.com/news/article
              discord link but not a channel https://discord.com/developers/docs/intro",
-        ).collect::<Vec<_>>();
+        )
+        .collect::<Vec<_>>();
 
         assert_eq!(links.len(), 2);
         assert!(links.contains(&"https://www.bbc.com/news/article".into()));
@@ -148,11 +156,15 @@ mod tests {
     #[test]
     fn test_extract_no_link() {
         assert_eq!(
-            get_links("just a random message with no links in it").collect::<Vec<_>>().len(),
+            get_links("just a random message with no links in it")
+                .collect::<Vec<_>>()
+                .len(),
             0
         );
         assert_eq!(
-            get_links("example@example.org isnt a link but could be by some definitions").collect::<Vec<_>>().len(),
+            get_links("example@example.org isnt a link but could be by some definitions")
+                .collect::<Vec<_>>()
+                .len(),
             0
         );
     }
@@ -168,7 +180,12 @@ mod tests {
 
         assert_eq!(get_links(message).collect::<Vec<_>>().len(), 0);
         // Also assert with no trailing slash
-        assert_eq!(get_links("https://globle-game.com").collect::<Vec<_>>().len(), 0);
+        assert_eq!(
+            get_links("https://globle-game.com")
+                .collect::<Vec<_>>()
+                .len(),
+            0
+        );
     }
 
     #[test]
@@ -181,7 +198,10 @@ mod tests {
 
         assert_eq!(get_links(message).collect::<Vec<_>>().len(), 0);
         // Also assert with no trailing slash
-        assert_eq!(get_links("https://heardle.app").collect::<Vec<_>>().len(), 0);
+        assert_eq!(
+            get_links("https://heardle.app").collect::<Vec<_>>().len(),
+            0
+        );
     }
 
     #[test]
@@ -194,6 +214,11 @@ mod tests {
 
         assert_eq!(get_links(message).collect::<Vec<_>>().len(), 0);
         // Also assert with no trailing slash
-        assert_eq!(get_links("https://worldle.teuteuf.fr").collect::<Vec<_>>().len(), 0);
+        assert_eq!(
+            get_links("https://worldle.teuteuf.fr")
+                .collect::<Vec<_>>()
+                .len(),
+            0
+        );
     }
 }
