@@ -143,7 +143,6 @@ dependencies = [
  "humantime",
  "image",
  "itertools",
- "lazy_static",
  "linkify",
  "log",
  "phf",

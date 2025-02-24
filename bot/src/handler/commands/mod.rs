@@ -4,16 +4,16 @@ use crate::errors::Result;
 use crate::structs::reply::{Reply, ReplyType};
 
 use db::{read_only_db_call, ReadOnlyDb};
-use lazy_static::lazy_static;
 use log::warn;
 use regex::Regex;
 use serenity::{model::channel::Message, prelude::*};
+use std::sync::LazyLock;
+
+static COMMAND_PREFIX_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)^!rp(m|b) ").unwrap());
 
 pub(super) fn has_command_prefix(command: &str) -> bool {
-    lazy_static! {
-        static ref RE: Regex = Regex::new(r"(?i)^!rp(m|b) ").unwrap();
-    }
-    RE.is_match(command)
+    COMMAND_PREFIX_REGEX.is_match(command)
 }
 
 fn repost_cnt(msg: &Message) -> Result<Reply<'_>> {
