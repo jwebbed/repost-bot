@@ -6,10 +6,10 @@ use crate::structs::{Post, PostProcessor, ProcessedPost};
 use filter::filtered_url;
 
 use db::{get_read_only_db, read_only_db_call, writable_db_call, ReadOnlyDb, WriteableDb};
-use lazy_static::lazy_static;
 use linkify::{LinkFinder, LinkKind};
 use log::{error, info};
 use regex::Regex;
+use std::sync::LazyLock;
 use url::Url;
 
 const IGNORED_DOMAINS: [&str; 5] = [
@@ -20,13 +20,13 @@ const IGNORED_DOMAINS: [&str; 5] = [
     r"worldle\.teuteuf\.fr",
 ];
 
+static IGNORED_DOMAIN_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(format!(r"https?://({})/?\S*", IGNORED_DOMAINS.join("|")).as_str()).unwrap()
+});
+
 /// returns true if the input link is one of the ignored domains
 fn ignored_domain(text: &str) -> bool {
-    lazy_static! {
-        static ref RE: Regex =
-            Regex::new(format!(r"https?://({})/?\S*", IGNORED_DOMAINS.join("|")).as_str()).unwrap();
-    }
-    RE.is_match(text)
+    IGNORED_DOMAIN_REGEX.is_match(text)
 }
 
 #[derive(Debug)]
