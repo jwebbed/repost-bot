@@ -5,9 +5,7 @@ use crate::structs::repost::{RepostSet, RepostType};
 use crate::structs::{Post, PostProcessor, ProcessedPost};
 use filter::filtered_url;
 
-use db::{
-    get_read_only_db, read_only_db_call, writable_db_call, ReadOnlyDb, WriteableDb,
-};
+use db::{get_read_only_db, read_only_db_call, writable_db_call, ReadOnlyDb, WriteableDb};
 use lazy_static::lazy_static;
 use linkify::{LinkFinder, LinkKind};
 use log::{error, info};
