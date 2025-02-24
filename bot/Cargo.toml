@@ -15,18 +15,22 @@ linkify = "0.10.0"
 regex = "1"
 humantime = "2.1.0"
 log = "0.4"
-simple_logger = "4"
+simple_logger = "5"
 phf = { version = "0.11", features = ["macros"] }
 unicode-segmentation = "1.7"
-rand = "0.8"
 time = "0.3"
 image = "0.24"
 visual-hash = "3.0"
-reqwest = "0.11"
+reqwest = "0.12"
 serde_json = "1"
-itertools = "0.11.0"
+itertools = "0.14"
 async-once-cell = "0.5.4"
 rusqlite = "0.33"
+
+[dependencies.rand]
+version = "0.9"
+default-features = false
+features = ["std", "small_rng"]
 
 [dependencies.serenity]
 version = "0.12"
