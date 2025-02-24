@@ -1,6 +1,5 @@
 use chrono::{DateTime, Utc};
 use log::debug;
-use serenity::model::id::MessageId;
 use std::cmp::Ordering;
 use std::time::Duration;
 
@@ -47,13 +46,6 @@ impl Message {
             deleted,
             checked_old,
         }
-    }
-
-    /// Returns a URI that references the message in discord. When clicked inside a
-    /// discord client it will auto scroll to the message
-    #[inline(always)]
-    pub fn uri(&self) -> String {
-        MessageId::new(self.id).link(self.channel.into(), Some(self.server.into()))
     }
 
     #[inline(always)]

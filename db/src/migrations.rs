@@ -183,12 +183,12 @@ fn delete_old_links(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+const MIN_VER: u32 = 7;
+// be sure to increment this everytime a new migration is added
+const FINAL_VER: u32 = 10;
+
 #[inline(always)]
 pub(crate) fn migrate(conn: &mut Connection) -> Result<()> {
-    const MIN_VER: u32 = 7;
-    // be sure to increment this everytime a new migration is added
-    const FINAL_VER: u32 = 10;
-
     let ver = queries::get_version(conn)?;
     info!("database version is currently: {ver} with target ver {FINAL_VER}");
     if ver == FINAL_VER {

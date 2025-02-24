@@ -380,7 +380,6 @@ dependencies = [
  "log",
  "paste",
  "rusqlite",
- "serenity",
 ]
 
 [[package]]

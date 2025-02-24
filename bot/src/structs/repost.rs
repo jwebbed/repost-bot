@@ -6,6 +6,7 @@ use humantime::format_duration;
 use itertools::Itertools;
 use log::info;
 use serenity::model;
+use serenity::model::id::MessageId;
 use std::collections::{BTreeMap, HashSet};
 use std::vec::Vec;
 
@@ -150,8 +151,13 @@ fn repost_text(original_message: &Message, reply_to_created_at: DateTime<Utc>) -
             .get_duration(reply_to_created_at)
             .map_or("".to_string(), |duration| format_duration(duration)
                 .to_string()),
-        original_message.uri()
+        build_uri(original_message)
     )
+}
+
+#[inline(always)]
+fn build_uri(message: &Message) -> String {
+    MessageId::new(message.id).link(message.channel.into(), Some(message.server.into()))
 }
 
 #[cfg(test)]
