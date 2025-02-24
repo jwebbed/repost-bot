@@ -10,8 +10,10 @@ use crate::structs::{Post, PostProcessor, ProcessedPost};
 use db::{get_read_only_db, get_writeable_db, writable_db_call, ReadOnlyDb, WriteableDb};
 use images::ImageProcessor;
 use log::{debug, error, info, trace, warn};
-use rand::seq::SliceRandom;
-use rand::{random, thread_rng};
+use rand::{Rng};
+use rand::SeedableRng;
+use rand::rngs::SmallRng;
+use rand::seq::IndexedRandom;
 use serenity::all::GuildMemberUpdateEvent;
 use serenity::{
     async_trait,
@@ -191,7 +193,11 @@ async fn process_discord_message_slow(ctx: &Context, msg: &Message) -> Result<()
     Ok(())
 }
 
-async fn process_old_messages(ctx: &Context, server_id: u64) -> Result<usize> {
+async fn process_old_messages(
+    ctx: &Context,
+    server_id: u64,
+    rng: &mut (impl Rng + ?Sized),
+) -> Result<usize> {
     const LIMIT: u8 = 50;
     let db = get_read_only_db()?;
     let (channel_id, query, base_msg) = match db.get_newest_unchecked_message(server_id)? {
@@ -202,13 +208,12 @@ async fn process_old_messages(ctx: &Context, server_id: u64) -> Result<usize> {
         ),
         None => {
             // if there is nothing to query we really don't need to spam the api all the time
-            if random::<f64>() > 0.015 {
+            if rng.random::<f64>() > 0.015 {
                 return Ok(0);
             }
             let channels = db.get_known_channels(server_id)?;
-            let mut rng = thread_rng();
             let channel = channels
-                .choose(&mut rng)
+                .choose(rng)
                 .ok_or(Error::ConstStr("Rng choose failed for some reason"))?;
 
             (channel.id, GetMessages::new().limit(LIMIT), None)
@@ -451,8 +456,11 @@ impl EventHandler for Handler {
 
             let g = guild.get();
             tokio::spawn(async move {
+                // Arbitrary seed, technically this means everything is deterministic 
+                // but we don't actually care for this purpose
+                let mut rng = SmallRng::seed_from_u64(1337);
                 loop {
-                    let tts = match process_old_messages(ctx, g).await {
+                    let tts = match process_old_messages(ctx, g, &mut rng).await {
                         Ok(val) => {
                             if val == 0 {
                                 10 * 60
