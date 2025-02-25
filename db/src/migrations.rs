@@ -166,6 +166,12 @@ migration![
     "DROP TABLE wordle;"
 ];
 
+migration![
+    11,
+    "DROP INDEX idx_user;",
+    "ALTER TABLE USER DROP COLUMN discriminator"
+];
+
 fn delete_old_links(conn: &Connection) -> Result<()> {
     trace!("starting delete old links");
     conn.execute(
@@ -185,7 +191,7 @@ fn delete_old_links(conn: &Connection) -> Result<()> {
 
 const MIN_VER: u32 = 7;
 // be sure to increment this everytime a new migration is added
-const FINAL_VER: u32 = 10;
+const FINAL_VER: u32 = 11;
 
 #[inline(always)]
 pub(crate) fn migrate(conn: &mut Connection) -> Result<()> {
@@ -218,6 +224,10 @@ pub(crate) fn migrate(conn: &mut Connection) -> Result<()> {
 
     if ver < 10 {
         migration_10(&tx)?;
+    }
+
+    if ver < 11 {
+        migration_11(&tx)?;
     }
     // delete old links we don't need
     delete_old_links(&tx)?;
@@ -388,7 +398,6 @@ mod tests {
         table.assert_row("id", "INTEGER", 0, None, 1);
         table.assert_row("username", "TEXT", 1, None, 0);
         table.assert_row("bot", "BOOL", 1, None, 0);
-        table.assert_row("discriminator", "INTEGER", 1, None, 0);
 
         Ok(())
     }

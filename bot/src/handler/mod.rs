@@ -10,10 +10,10 @@ use crate::structs::{Post, PostProcessor, ProcessedPost};
 use db::{get_read_only_db, get_writeable_db, writable_db_call, ReadOnlyDb, WriteableDb};
 use images::ImageProcessor;
 use log::{debug, error, info, trace, warn};
-use rand::{Rng};
-use rand::SeedableRng;
 use rand::rngs::SmallRng;
 use rand::seq::IndexedRandom;
+use rand::Rng;
+use rand::SeedableRng;
 use serenity::all::GuildMemberUpdateEvent;
 use serenity::{
     async_trait,
@@ -70,12 +70,7 @@ async fn process_discord_message(ctx: &Context, msg: &Message) -> Result<Post> {
 
     let db = get_writeable_db()?;
 
-    db.add_user(
-        msg.author.id.into(),
-        &msg.author.name,
-        msg.author.bot,
-        msg.author.discriminator.map(|val| val.get()),
-    )?;
+    db.add_user(msg.author.id.into(), &msg.author.name, msg.author.bot)?;
 
     let server = msg
         .guild_id
@@ -413,12 +408,7 @@ impl EventHandler for Handler {
                 }
             };
             let author_id = new.user.id.get();
-            if let Err(why) = db.add_user(
-                author_id,
-                &new.user.name,
-                new.user.bot,
-                new.user.discriminator.map(|val| val.get()),
-            ) {
+            if let Err(why) = db.add_user(author_id, &new.user.name, new.user.bot) {
                 error!("Error adding user: {why:?}");
                 return;
             }
@@ -456,7 +446,7 @@ impl EventHandler for Handler {
 
             let g = guild.get();
             tokio::spawn(async move {
-                // Arbitrary seed, technically this means everything is deterministic 
+                // Arbitrary seed, technically this means everything is deterministic
                 // but we don't actually care for this purpose
                 let mut rng = SmallRng::seed_from_u64(1337);
                 loop {
