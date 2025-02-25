@@ -1,9 +1,9 @@
 [package]
 name = "bot"
-version = "0.5.2"
+version = "0.5.3"
 authors = ["Jonathan Webb <jonathan@webb.nyc>"]
-edition = "2021"
-rust-version = "1.80"
+edition = "2024"
+rust-version = "1.85"
 license = "GPL-3.0-or-later"
 
 [dependencies]
