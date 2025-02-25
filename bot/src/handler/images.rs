@@ -126,8 +126,7 @@ fn should_process(attachment_type: &AttachmentType) -> bool {
     // Match block in order so the order is intentionally set to the most to least specific.
     match attachment_type {
         AttachmentType::Attachment { content_type } => content_type
-            .as_ref()
-            .map_or(false, |t| t.starts_with("image")),
+            .as_ref().is_some_and(|t| t.starts_with("image")),
 
         AttachmentType::EmbedImage {
             provider_name: Some(provider_name),

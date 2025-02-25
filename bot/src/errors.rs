@@ -12,8 +12,8 @@ pub enum Error {
     Rusqlite(rusqlite::Error),
     Url(url::ParseError),
     Reqwest(reqwest::Error),
-    ImageError(image::ImageError),
-    IoError(std::io::Error),
+    Image(image::ImageError),
+    Io(std::io::Error),
     BotMessage,
     ConstStr(&'static str),
     BoxedErr(Box<Error>),
@@ -26,8 +26,8 @@ impl Display for Error {
             Error::Rusqlite(inner) => fmt::Display::fmt(&inner, f),
             Error::Url(inner) => fmt::Display::fmt(&inner, f),
             Error::Reqwest(inner) => fmt::Display::fmt(&inner, f),
-            Error::ImageError(inner) => fmt::Display::fmt(&inner, f),
-            Error::IoError(inner) => fmt::Display::fmt(&inner, f),
+            Error::Image(inner) => fmt::Display::fmt(&inner, f),
+            Error::Io(inner) => fmt::Display::fmt(&inner, f),
             Error::BoxedErr(inner) => fmt::Display::fmt(&inner, f),
             Error::ConstStr(inner) => f.write_str(inner),
             Error::BotMessage => f.write_str("Message is from a bot"),
@@ -63,13 +63,13 @@ impl From<reqwest::Error> for Error {
 
 impl From<image::ImageError> for Error {
     fn from(e: image::ImageError) -> Error {
-        Error::ImageError(e)
+        Error::Image(e)
     }
 }
 
 impl From<std::io::Error> for Error {
     fn from(e: std::io::Error) -> Error {
-        Error::IoError(e)
+        Error::Io(e)
     }
 }
 

@@ -67,7 +67,7 @@ impl Attachment {
             AttachmentType::EmbedThumbnail {
                 provider_name: get_provider_name(embed.provider.as_ref()),
                 square_dimension: get_square_embed_dimension(image),
-                is_link_type: embed.kind.as_ref().map_or(false, |kind| kind == "link"),
+                is_link_type: embed.kind.as_ref().is_some_and(|kind| kind == "link"),
             },
             &image.proxy_url,
             &image.url,
