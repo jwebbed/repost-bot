@@ -70,28 +70,20 @@ pub trait WriteableDb: GetConnectionMutable + ReadOnlyDb {
     }
 
     #[inline]
-    fn add_user(
-        &self,
-        user_id: u64,
-        username: &str,
-        bot: bool,
-        discriminator: Option<u16>,
-    ) -> Result<()> {
+    fn add_user(&self, user_id: u64, username: &str, bot: bool) -> Result<()> {
         let mut stmt = self.get_connection().prepare(
-            "INSERT INTO user (id, username, bot, discriminator) 
-            VALUES ( ?1, ?2, ?3, ?4 )
+            "INSERT INTO user (id, username, bot)
+            VALUES ( ?1, ?2, ?3 )
             ON CONFLICT(id) DO UPDATE SET 
                 username=excluded.username,
-                bot=excluded.bot,
-                discriminator=excluded.discriminator
+                bot=excluded.bot
             WHERE (
                 user.username != excluded.username OR
-                user.bot != excluded.bot OR
-                user.discriminator != excluded.discriminator
+                user.bot != excluded.bot
             )",
         )?;
 
-        stmt.execute((user_id, username, bot, discriminator.unwrap_or(0)))?;
+        stmt.execute((user_id, username, bot))?;
 
         Ok(())
     }
