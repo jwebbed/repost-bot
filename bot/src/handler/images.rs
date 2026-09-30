@@ -1,3 +1,4 @@
+use super::links::{filtered_url, normalized_links, site_host};
 use crate::errors::Result;
 use crate::structs::repost::{RepostSet, RepostType};
 use crate::structs::{Attachment, AttachmentType, Post, PostProcessor, ProcessedPost};
@@ -5,11 +6,14 @@ use crate::structs::{Attachment, AttachmentType, Post, PostProcessor, ProcessedP
 use db::{ReadOnlyDb, WriteableDb, get_read_only_db, writable_db_call};
 use futures_util::future::join_all;
 use image::io::Reader;
-use log::{info, warn};
+use log::{debug, info, warn};
 use phf::phf_set;
+use std::collections::hash_map::Entry;
+use std::collections::{HashMap, HashSet};
 use std::io::Cursor;
 use std::sync::{Arc, LazyLock};
 use std::time::Instant;
+use url::Url;
 use visual_hash::{HashAlg, Hasher, HasherConfig, ImageHash};
 
 static IGNORED_PROVIDERS: phf::Set<&'static str> = phf_set! {
@@ -31,17 +35,28 @@ const MATCH_DISTANCE_THRESHOLD: u32 = 5;
 #[derive(Debug)]
 pub struct ImageProcessor;
 
+struct HashedImage {
+    hash: ImageHash,
+    url: Arc<str>,
+    /// For embeds, the sites of the page the image is a preview of
+    source_sites: Vec<String>,
+}
+
 pub struct HashedImages {
     db_message: db::structs::Message,
-    hashes: Vec<(ImageHash, Arc<str>)>,
+    hashes: Vec<HashedImage>,
+    /// Links posted in the message, as stored in the db
+    links: HashSet<String>,
 }
 
 impl PostProcessor for ImageProcessor {
     type Processed = HashedImages;
 
     async fn process(post: &Post) -> Result<HashedImages> {
+        let links = normalized_links(post.content());
+
         // download and hash every image concurrently
-        let hashes = join_all(
+        let hashes: Vec<(ImageHash, &Attachment)> = join_all(
             post.attachments()
                 .filter(|attachment| should_process(&attachment.attachment_type))
                 .map(|attachment| hash_attachment(post.id(), attachment)),
@@ -51,11 +66,66 @@ impl PostProcessor for ImageProcessor {
         .filter_map(Result::transpose)
         .collect::<Result<_>>()?;
 
+        let hashes = hashes
+            .into_iter()
+            .map(|(hash, attachment)| HashedImage {
+                hash,
+                url: attachment.url.clone(),
+                source_sites: source_sites(attachment, &links),
+            })
+            .collect();
+
         Ok(HashedImages {
             db_message: post.db_message,
             hashes,
+            links: links.into_iter().map(String::from).collect(),
         })
     }
+}
+
+/// Returns the sites an embed image is a preview of. Uses the page the embed
+/// is for when known, otherwise every link posted in the message. Uploaded
+/// attachments have no source site.
+fn source_sites(attachment: &Attachment, links: &[Url]) -> Vec<String> {
+    if let AttachmentType::Attachment { .. } = attachment.attachment_type {
+        return Vec::new();
+    }
+    let source = attachment
+        .source_url
+        .as_deref()
+        .and_then(|url| filtered_url(url).ok());
+    let mut sites: Vec<String> = source.as_ref().map_or_else(
+        || {
+            links
+                .iter()
+                .filter_map(site_host)
+                .map(String::from)
+                .collect()
+        },
+        |url| site_host(url).into_iter().map(String::from).collect(),
+    );
+    sites.sort_unstable();
+    sites.dedup();
+    sites
+}
+
+/// Returns true when an embed image only matched an earlier message because
+/// that message linked to a different page on the same site. Sites commonly
+/// reuse one preview image across many pages (e.g. every song on an album
+/// shares the album cover), so these aren't reposts. Posting the exact same
+/// link is still a repost, as is the same image previewed by a different site.
+fn is_same_site_different_page(
+    source_sites: &[String],
+    links: &HashSet<String>,
+    matched_links: &[String],
+) -> bool {
+    if source_sites.is_empty() || matched_links.iter().any(|link| links.contains(link)) {
+        return false;
+    }
+    matched_links
+        .iter()
+        .filter_map(|link| Url::parse(link).ok())
+        .any(|url| site_host(&url).is_some_and(|site| source_sites.iter().any(|s| s == site)))
 }
 
 /// Downloads and hashes an attachment. Attachments that can't be downloaded or
@@ -64,7 +134,7 @@ impl PostProcessor for ImageProcessor {
 async fn hash_attachment(
     msg_id: u64,
     attachment: &Attachment,
-) -> Result<Option<(ImageHash, Arc<str>)>> {
+) -> Result<Option<(ImageHash, &Attachment)>> {
     let bytes = match attachment.download().await {
         Ok(bytes) => bytes,
         Err(why) => {
@@ -84,7 +154,7 @@ async fn hash_attachment(
             hash.to_base64(),
             parse_time.elapsed()
         );
-        (hash, attachment.url.clone())
+        (hash, attachment)
     }))
 }
 
@@ -96,7 +166,12 @@ impl ProcessedPost for HashedImages {
         }
 
         let db = get_read_only_db()?;
-        for (hash, _url) in &self.hashes {
+        // links of each matched message, only loaded for embed images
+        let mut matched_links: HashMap<u64, Vec<String>> = HashMap::new();
+        for HashedImage {
+            hash, source_sites, ..
+        } in &self.hashes
+        {
             let b64 = hash.to_base64();
             let matches = db.hash_matches(&b64, self.db_message.server, self.db_message.id)?;
             info!(
@@ -109,9 +184,23 @@ impl ProcessedPost for HashedImages {
                 if let Ok(db_hash) = ImageHash::from_base64(db_hash_b64) {
                     let distance = hash.dist(&db_hash);
                     info!("Hamming Distance for db_hash {db_hash_b64} is {distance}");
-                    if distance < MATCH_DISTANCE_THRESHOLD {
-                        reposts.add(*db_msg, RepostType::Image);
+                    if distance >= MATCH_DISTANCE_THRESHOLD {
+                        continue;
                     }
+                    if !source_sites.is_empty() {
+                        let db_links = match matched_links.entry(db_msg.id) {
+                            Entry::Occupied(entry) => entry.into_mut(),
+                            Entry::Vacant(entry) => entry.insert(db.get_message_links(db_msg.id)?),
+                        };
+                        if is_same_site_different_page(source_sites, &self.links, db_links) {
+                            debug!(
+                                "ignoring image match with {} as it is a different page on {source_sites:?}",
+                                db_msg.id
+                            );
+                            continue;
+                        }
+                    }
+                    reposts.add(*db_msg, RepostType::Image);
                 }
             }
         }
@@ -126,7 +215,7 @@ impl ProcessedPost for HashedImages {
         let hashes: Vec<(&str, String)> = self
             .hashes
             .iter()
-            .map(|(hash, url)| (&**url, hash.to_base64()))
+            .map(|image| (&*image.url, image.hash.to_base64()))
             .collect();
         writable_db_call(|mut db| {
             db.insert_images(
@@ -180,7 +269,10 @@ fn should_process(attachment_type: &AttachmentType) -> bool {
             provider_name: Some(provider_name),
             square_dimension: Some(dimension),
             is_link_type: true,
-        } => &**provider_name != "Threads" || *dimension > 640,
+        } => {
+            should_process_provider(provider_name)
+                && (&**provider_name != "Threads" || *dimension > 640)
+        }
         AttachmentType::EmbedThumbnail {
             provider_name: Some(provider_name),
             ..
@@ -329,5 +421,136 @@ mod tests {
             false
         )));
         assert!(should_process(&thumbnail(Some("Threads"), None, true)));
+
+        // ignored providers are ignored for square link thumbnails too (e.g. album covers)
+        assert!(!should_process(&thumbnail(
+            Some("Apple Music"),
+            Some(1200),
+            true
+        )));
+        assert!(!should_process(&thumbnail(
+            Some("YouTube"),
+            Some(100),
+            true
+        )));
+        assert!(should_process(&thumbnail(Some("Reddit"), Some(100), true)));
+    }
+
+    fn strings(values: &[&str]) -> Vec<String> {
+        values.iter().map(|v| v.to_string()).collect()
+    }
+
+    fn string_set(values: &[&str]) -> HashSet<String> {
+        values.iter().map(|v| v.to_string()).collect()
+    }
+
+    #[test]
+    fn test_same_site_different_page_ignored() {
+        // different songs on the same album share the album cover
+        let apple_music = site_host(&Url::parse("https://music.apple.com/").unwrap())
+            .unwrap()
+            .to_string();
+        assert!(is_same_site_different_page(
+            &[apple_music],
+            &string_set(&["https://music.apple.com/ca/album/x/1?i=2"]),
+            &strings(&["https://music.apple.com/ca/album/x/1?i=3"]),
+        ));
+        // a site that uses one preview image for every page
+        assert!(is_same_site_different_page(
+            &strings(&["floofkart.com"]),
+            &string_set(&["https://floofkart.com/?d=2026-09-30&t=1"]),
+            &strings(&["https://www.floofkart.com/?d=2026-09-29&t=2"]),
+        ));
+    }
+
+    #[test]
+    fn test_album_art_across_music_streamers_ignored() {
+        let site = |url: &str| site_host(&Url::parse(url).unwrap()).unwrap().to_string();
+        let spotify = "https://open.spotify.com/track/song-a";
+        let tidal = "https://tidal.com/browse/track/song-b";
+        assert!(is_same_site_different_page(
+            &[site(tidal)],
+            &string_set(&[tidal]),
+            &strings(&[spotify]),
+        ));
+        // album art matching a non music link is still a repost
+        assert!(!is_same_site_different_page(
+            &[site(tidal)],
+            &string_set(&[tidal]),
+            &strings(&["https://twitter.com/user/status/1"]),
+        ));
+    }
+
+    #[test]
+    fn test_same_link_still_a_repost() {
+        let link = "https://floofkart.com/?d=2026-09-30&t=1";
+        assert!(!is_same_site_different_page(
+            &strings(&["floofkart.com"]),
+            &string_set(&[link]),
+            &strings(&["https://example.com/", link]),
+        ));
+    }
+
+    #[test]
+    fn test_same_image_from_different_site_still_a_repost() {
+        assert!(!is_same_site_different_page(
+            &strings(&["twitter.com"]),
+            &string_set(&["https://twitter.com/user/status/1"]),
+            &strings(&["https://reddit.com/r/pics/1"]),
+        ));
+        // the original was an uploaded image with no links
+        assert!(!is_same_site_different_page(
+            &strings(&["twitter.com"]),
+            &string_set(&["https://twitter.com/user/status/1"]),
+            &[],
+        ));
+    }
+
+    #[test]
+    fn test_uploaded_images_always_a_repost() {
+        assert!(!is_same_site_different_page(
+            &[],
+            &string_set(&["https://music.apple.com/a"]),
+            &strings(&["https://music.apple.com/b"]),
+        ));
+    }
+
+    fn embed_attachment(source_url: Option<&str>) -> Attachment {
+        Attachment {
+            url: "https://proxy/image.png".into(),
+            attachment_type: AttachmentType::EmbedImage {
+                provider_name: None,
+            },
+            source_url: source_url.map(Box::from),
+        }
+    }
+
+    #[test]
+    fn test_source_sites() {
+        let links = vec![
+            Url::parse("https://www.example.com/a").unwrap(),
+            Url::parse("https://twitter.com/user/status/1").unwrap(),
+        ];
+        // the embed's own page is preferred, and normalised like stored links
+        assert_eq!(
+            source_sites(
+                &embed_attachment(Some("https://x.com/User/status/1")),
+                &links
+            ),
+            vec!["twitter.com"]
+        );
+        // otherwise any link in the message
+        assert_eq!(
+            source_sites(&embed_attachment(None), &links),
+            vec!["example.com", "twitter.com"]
+        );
+        let upload = Attachment {
+            url: "https://cdn/a.png".into(),
+            attachment_type: AttachmentType::Attachment {
+                content_type: Some("image/png".into()),
+            },
+            source_url: None,
+        };
+        assert!(source_sites(&upload, &links).is_empty());
     }
 }

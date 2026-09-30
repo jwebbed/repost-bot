@@ -3,7 +3,7 @@ mod filter;
 use crate::errors::Result;
 use crate::structs::repost::{RepostSet, RepostType};
 use crate::structs::{Post, PostProcessor, ProcessedPost};
-use filter::filtered_url;
+pub(super) use filter::{filtered_url, site_host};
 
 use db::{ReadOnlyDb, WriteableDb, get_read_only_db, read_only_db_call, writable_db_call};
 use linkify::{LinkFinder, LinkKind};
@@ -46,23 +46,10 @@ impl PostProcessor for LinkProcessor {
     type Processed = Links;
 
     async fn process(post: &Post) -> Result<Links> {
-        let mut links: Vec<Url> = get_links(post.content())
-            .filter_map(|link| match filtered_url(link) {
-                Ok(url) => Some(url),
-                Err(why) => {
-                    error!("Failed to filter url {link}: {why:?}");
-                    None
-                }
-            })
-            .collect();
-        // the same link posted twice in one message is still one post
-        links.sort_unstable();
-        links.dedup();
-
         Ok(Links {
             msg_id: post.id(),
             server_id: post.server_id(),
-            links,
+            links: normalized_links(post.content()),
         })
     }
 }
@@ -93,6 +80,24 @@ impl ProcessedPost for Links {
         }
         Ok(())
     }
+}
+
+/// Returns the deduplicated links in a message, with tracking fields removed
+/// and hosts normalised, in the form they are stored in the db
+pub(super) fn normalized_links(content: &str) -> Vec<Url> {
+    let mut links: Vec<Url> = get_links(content)
+        .filter_map(|link| match filtered_url(link) {
+            Ok(url) => Some(url),
+            Err(why) => {
+                error!("Failed to filter url {link}: {why:?}");
+                None
+            }
+        })
+        .collect();
+    // the same link posted twice in one message is still one post
+    links.sort_unstable();
+    links.dedup();
+    links
 }
 
 fn get_links(msg: &str) -> impl Iterator<Item = &str> {

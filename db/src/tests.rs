@@ -384,3 +384,21 @@ fn test_get_newest_unchecked_message() -> Result<()> {
     assert_eq!(db.get_newest_unchecked_message(SERVER)?, None);
     Ok(())
 }
+
+#[test]
+fn test_get_message_links() -> Result<()> {
+    let mut db = setup()?;
+    let msg = add_msg(&db, 1_000, CHANNEL, SERVER, AUTHOR);
+    let other = add_msg(&db, 2_000, CHANNEL, SERVER, AUTHOR);
+    assert!(db.get_message_links(msg.id)?.is_empty());
+
+    db.insert_links(["https://example.com/a", "https://example.com/b"], msg.id)?;
+    db.insert_links(["https://example.com/c"], other.id)?;
+    let mut links = db.get_message_links(msg.id)?;
+    links.sort_unstable();
+    assert_eq!(
+        links,
+        vec!["https://example.com/a", "https://example.com/b"]
+    );
+    Ok(())
+}

@@ -111,6 +111,55 @@ fn transform_url(url: Url) -> Result<Url> {
     Ok(transformed.unwrap_or(url))
 }
 
+/// Hosts of music streaming services. They all use the album cover as the
+/// preview image for songs, so they are treated as a single site.
+static MUSIC_STREAMING_HOSTS: phf::Set<&'static str> = phf_set! {
+    "open.spotify.com",
+    "play.spotify.com",
+    "spotify.link",
+    "music.apple.com",
+    "geo.music.apple.com",
+    "itunes.apple.com",
+    "tidal.com",
+    "listen.tidal.com",
+    "deezer.com",
+    "link.deezer.com",
+    "deezer.page.link",
+    "music.youtube.com",
+    "soundcloud.com",
+    "m.soundcloud.com",
+    "on.soundcloud.com",
+    "pandora.com",
+    "song.link",
+    "album.link",
+    "odesli.co",
+};
+
+/// Site key shared by every music streaming service
+const MUSIC_STREAMING_SITE: &str = "music streaming";
+
+fn is_music_streaming_host(host: &str) -> bool {
+    MUSIC_STREAMING_HOSTS.contains(host)
+        // every artist has their own subdomain
+        || host == "bandcamp.com"
+        || host.ends_with(".bandcamp.com")
+        // one domain per country, e.g. music.amazon.co.uk
+        || host.starts_with("music.amazon.")
+}
+
+/// Returns the site a url belongs to, ignoring any leading "www.". Every
+/// music streaming service is considered to be the same site.
+pub fn site_host(url: &Url) -> Option<&str> {
+    url.host_str().map(|host| {
+        let host = host.strip_prefix("www.").unwrap_or(host);
+        if is_music_streaming_host(host) {
+            MUSIC_STREAMING_SITE
+        } else {
+            host
+        }
+    })
+}
+
 /// filtered_url takes a url_str and returns a Url object with the any irrelevent
 /// fields in the query string removed as per filter_field
 pub fn filtered_url(url_str: &str) -> Result<Url> {
@@ -277,5 +326,52 @@ mod tests {
             filtered_url("mailto:someone@example.com"),
             Err(Error::ConstStr(_))
         ));
+    }
+
+    #[test]
+    fn test_site_host() -> Result<()> {
+        let site = |url: &str| Url::parse(url).map(|url| site_host(&url).map(String::from));
+        assert_eq!(
+            site("https://www.example.com/a")?.as_deref(),
+            Some("example.com")
+        );
+        assert_eq!(
+            site("https://example.com/b")?.as_deref(),
+            Some("example.com")
+        );
+        assert_eq!(site("mailto:someone@example.com")?, None);
+        Ok(())
+    }
+
+    #[test]
+    fn test_music_streaming_sites_are_one_site() -> Result<()> {
+        let site = |url: &str| Url::parse(url).map(|url| site_host(&url).map(String::from));
+        for url in [
+            "https://open.spotify.com/track/abc",
+            "https://music.apple.com/ca/album/x/1?i=2",
+            "https://listen.tidal.com/track/1",
+            "https://tidal.com/browse/track/1",
+            "https://www.deezer.com/track/1",
+            "https://music.youtube.com/watch?v=abc",
+            "https://soundcloud.com/artist/song",
+            "https://artist.bandcamp.com/track/song",
+            "https://music.amazon.co.uk/albums/abc",
+            "https://song.link/s/abc",
+        ] {
+            assert_eq!(
+                site(url)?.as_deref(),
+                Some(MUSIC_STREAMING_SITE),
+                "{url} should be a music streaming site"
+            );
+        }
+        // regular youtube videos and lookalike hosts aren't music streaming
+        for url in [
+            "https://www.youtube.com/watch?v=abc",
+            "https://notbandcamp.com/",
+            "https://apple.com/music",
+        ] {
+            assert_ne!(site(url)?.as_deref(), Some(MUSIC_STREAMING_SITE), "{url}");
+        }
+        Ok(())
     }
 }

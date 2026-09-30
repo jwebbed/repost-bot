@@ -33,6 +33,8 @@ pub enum AttachmentType {
 pub struct Attachment {
     pub url: Arc<str>,
     pub attachment_type: AttachmentType,
+    /// For embeds, the url of the page the embed is a preview of
+    pub source_url: Option<Box<str>>,
 }
 
 impl Attachment {
@@ -43,6 +45,7 @@ impl Attachment {
             attachment_type: AttachmentType::Attachment {
                 content_type: attachment.content_type.clone(),
             },
+            source_url: None,
         }
     }
 
@@ -52,6 +55,7 @@ impl Attachment {
             AttachmentType::EmbedImage {
                 provider_name: get_provider_name(embed.provider.as_ref()),
             },
+            embed,
             image.proxy_url.as_deref(),
             &image.url,
         )
@@ -68,6 +72,7 @@ impl Attachment {
                 square_dimension: get_square_embed_dimension(image),
                 is_link_type: embed.kind.as_deref() == Some("link"),
             },
+            embed,
             image.proxy_url.as_deref(),
             &image.url,
         )
@@ -76,12 +81,14 @@ impl Attachment {
     #[inline]
     fn from_embed(
         attachment_type: AttachmentType,
+        embed: &channel::Embed,
         proxy_url: Option<&str>,
         url: &str,
     ) -> Attachment {
         Attachment {
             url: proxy_url.unwrap_or(url).into(),
             attachment_type,
+            source_url: embed.url.as_deref().map(Box::from),
         }
     }
 
@@ -239,6 +246,7 @@ mod tests {
         let embeds = [
             embed(json!({
                 "type": "link",
+                "url": "https://threads.net/post",
                 "provider": { "name": "Threads" },
                 "thumbnail": { "url": "https://t/1.png", "proxy_url": "https://proxy/1.png", "width": 100, "height": 100 },
             })),
@@ -255,6 +263,14 @@ mod tests {
         assert_eq!(post.id(), 1);
         assert_eq!(post.server_id(), 2);
         assert!(post.has_attachments());
+        let source_urls: Vec<_> = post
+            .attachments()
+            .map(|a| a.source_url.as_deref())
+            .collect();
+        assert_eq!(
+            source_urls,
+            vec![None, Some("https://threads.net/post"), None, None]
+        );
 
         let found: Vec<_> = post
             .attachments()

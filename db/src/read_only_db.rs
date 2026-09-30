@@ -211,6 +211,19 @@ pub trait ReadOnlyDb: GetConnectionImmutable {
         .collect()
     }
 
+    /// Returns every link that was posted in a message
+    #[inline]
+    fn get_message_links(&self, message_id: u64) -> Result<Vec<String>> {
+        self.get_connection()
+            .prepare_cached(
+                "SELECT L.link FROM message_link AS ML
+                JOIN link AS L ON L.id = ML.link
+                WHERE ML.message = (?1)",
+            )?
+            .query_map([message_id], |row| row.get(0))?
+            .collect()
+    }
+
     #[inline]
     fn get_reply(&self, replied_id: u64) -> Result<Option<Reply>> {
         self.get_connection()
