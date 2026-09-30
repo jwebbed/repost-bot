@@ -1,4 +1,4 @@
-use crate::errors::Result;
+use crate::errors::{Error, Result};
 
 use log::debug;
 use phf::phf_set;
@@ -73,48 +73,42 @@ static GENERIC_FIELDS: phf::Set<&'static str> = phf_set! {
 /// Requires the host as well as sometimes we do specific filters for specifics hosts
 /// i.e we filter "s" on twitter but nothing else. It should be expected that this
 /// function will grow over time
-#[inline(always)]
+#[inline]
 fn filter_field(host: &str, field: &str) -> bool {
     let host_match = match host {
         "twitter" | "twitter.com" | "x" | "x.com" => TWITTER_FIELDS.contains(field),
-        "youtube" | "youtube.com" => YOUTUBE_FIELDS.contains(field),
+        "youtube" | "youtube.com" | "www.youtube.com" | "m.youtube.com" => {
+            YOUTUBE_FIELDS.contains(field)
+        }
         _ => false,
     };
     host_match || GENERIC_FIELDS.contains(field)
 }
 
 fn transform_url(url: Url) -> Result<Url> {
-    let ret = if url.host_str().is_some() {
-        match url.host_str().unwrap() {
-            "youtu.be" => {
-                let path = url.path();
-                if path.len() > 1 {
-                    Some(Url::parse_with_params(
-                        "https://www.youtube.com/watch",
-                        &[("v", &path[1..path.len()])],
-                    )?)
-                } else {
-                    None
-                }
-            }
-            "x.com" => {
-                let mut new_url = url.clone();
-                new_url.set_host(Some("twitter.com"))?;
-                new_url.set_path(&url.path().to_ascii_lowercase());
-                Some(new_url)
-            }
-            "twitter.com" => {
-                let mut new_url = url.clone();
-                new_url.set_path(&url.path().to_ascii_lowercase());
-                Some(new_url)
-            }
+    let transformed = match url.host_str() {
+        Some("youtu.be") => match url.path().strip_prefix('/') {
+            Some(id) if !id.is_empty() => Some(Url::parse_with_params(
+                "https://www.youtube.com/watch",
+                &[("v", id)],
+            )?),
             _ => None,
+        },
+        Some("x.com") => {
+            let mut new_url = url.clone();
+            new_url.set_host(Some("twitter.com"))?;
+            new_url.set_path(&url.path().to_ascii_lowercase());
+            Some(new_url)
         }
-    } else {
-        None
+        Some("twitter.com") => {
+            let mut new_url = url.clone();
+            new_url.set_path(&url.path().to_ascii_lowercase());
+            Some(new_url)
+        }
+        _ => None,
     };
 
-    Ok(ret.map_or(url, |value| value))
+    Ok(transformed.unwrap_or(url))
 }
 
 /// filtered_url takes a url_str and returns a Url object with the any irrelevent
@@ -123,26 +117,21 @@ pub fn filtered_url(url_str: &str) -> Result<Url> {
     let base_url = Url::parse(url_str)?;
     debug!("Pre-filter URL: {base_url:?}");
     let mut url = transform_url(base_url)?;
-    let host = url.host_str().ok_or(rusqlite::Error::QueryReturnedNoRows)?;
+    let host = url.host_str().ok_or(Error::ConstStr("URL has no host"))?;
 
-    let fields = url
-        .query_pairs()
-        .filter(|(field, _value)| !filter_field(host, field))
-        .map(|(f, v)| (Box::from(f), Box::from(v)))
-        .collect::<Vec<(Box<str>, Box<str>)>>();
+    // only rebuild the query string when there is one to filter
+    if url.query().is_some() {
+        let fields: Vec<(String, String)> = url
+            .query_pairs()
+            .filter(|(field, _value)| !filter_field(host, field))
+            .map(|(f, v)| (f.into_owned(), v.into_owned()))
+            .collect();
 
-    let mut query = url.query_pairs_mut();
-    query.clear();
-    for field in fields {
-        query.append_pair(&field.0, &field.1);
-    }
-
-    // need this to ensure no dangling references
-    drop(query);
-
-    // if query is some(empty string) then the result will contain a dangling ?, this removes that
-    if url.query() == Some("") {
-        url.set_query(None);
+        if fields.is_empty() {
+            url.set_query(None);
+        } else {
+            url.query_pairs_mut().clear().extend_pairs(fields);
+        }
     }
 
     debug!("Filtered URL: {url:?}");
@@ -226,5 +215,67 @@ mod tests {
             "https://www.youtube.com/watch?v=anotherfakeid"
         );
         Ok(())
+    }
+
+    #[test]
+    fn test_youtube_sl_without_id() -> Result<()> {
+        let url = Url::parse("https://youtu.be/")?;
+        assert_eq!(transform_url(url)?.as_str(), "https://youtu.be/");
+        Ok(())
+    }
+
+    #[test]
+    fn test_filter_www_youtube() -> Result<()> {
+        let filtered = filtered_url("https://www.youtube.com/watch?v=fakeid&feature=share")?;
+        assert_eq!(filtered.as_str(), "https://www.youtube.com/watch?v=fakeid");
+        Ok(())
+    }
+
+    #[test]
+    fn test_filter_generic_tracking_fields() -> Result<()> {
+        let filtered = filtered_url(
+            "https://example.com/article?utm_source=a&id=5&fbclid=b&utm_campaign=c&page=2",
+        )?;
+        assert_eq!(filtered.as_str(), "https://example.com/article?id=5&page=2");
+        Ok(())
+    }
+
+    #[test]
+    fn test_filter_keeps_fields_for_other_hosts() -> Result<()> {
+        // "s" and "t" are only tracking fields on specific hosts
+        let filtered = filtered_url("https://example.com/search?s=term&t=10")?;
+        assert_eq!(filtered.as_str(), "https://example.com/search?s=term&t=10");
+        Ok(())
+    }
+
+    #[test]
+    fn test_filter_all_fields_removes_question_mark() -> Result<()> {
+        assert_eq!(
+            filtered_url("https://example.com/?utm_source=a")?.as_str(),
+            "https://example.com/"
+        );
+        assert_eq!(
+            filtered_url("https://example.com/?")?.as_str(),
+            "https://example.com/"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_filter_preserves_fragment() -> Result<()> {
+        assert_eq!(
+            filtered_url("https://example.com/page?ref=a#section")?.as_str(),
+            "https://example.com/page#section"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_filter_url_errors() {
+        assert!(matches!(filtered_url("not a url"), Err(Error::Url(_))));
+        assert!(matches!(
+            filtered_url("mailto:someone@example.com"),
+            Err(Error::ConstStr(_))
+        ));
     }
 }

@@ -1,14 +1,14 @@
 mod post;
 pub mod reply;
 pub mod repost;
-pub use post::{AttachmentType, Post};
+pub use post::{Attachment, AttachmentType, Post};
 
 use crate::errors::Result;
 
 pub trait PostProcessor {
-    fn new(post: Post) -> Self;
+    type Processed: ProcessedPost;
 
-    async fn process(&self) -> Result<impl ProcessedPost>;
+    async fn process(post: &Post) -> Result<Self::Processed>;
 }
 
 pub trait ProcessedPost {

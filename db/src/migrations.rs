@@ -6,7 +6,6 @@ use rusqlite::{Connection, Result};
 macro_rules! migration {
     ( $n:literal, $( $x:literal ),* ) => {
         paste::item! {
-            #[inline(always)]
             fn [< migration_$n >] (conn: &Connection) -> Result<()> {
                 trace!("running migration {}", $n);
 
@@ -172,28 +171,49 @@ migration![
     "ALTER TABLE USER DROP COLUMN discriminator"
 ];
 
-fn delete_old_links(conn: &Connection) -> Result<()> {
+migration![
+    12,
+    // join tables were only ever looked up by full scans
+    "CREATE INDEX IF NOT EXISTS idx_message_link_link ON message_link (link, message);",
+    "CREATE INDEX IF NOT EXISTS idx_message_link_message ON message_link (message, link);",
+    "CREATE INDEX IF NOT EXISTS idx_message_image_image ON message_image (image, message);",
+    "CREATE INDEX IF NOT EXISTS idx_message_image_message ON message_image (message, image);",
+    "CREATE INDEX IF NOT EXISTS idx_image_hash ON image (hash);",
+    // used to find the newest unchecked message and to compare message ages
+    "CREATE INDEX IF NOT EXISTS idx_msg_server_created ON message (server, created_at);"
+];
+
+type Migration = fn(&Connection) -> Result<()>;
+
+/// Every migration in the order it should be applied, the last entry
+/// determines the final version of the database.
+const MIGRATIONS: [(u32, Migration); 6] = [
+    (7, migration_7),
+    (8, migration_8),
+    (9, migration_9),
+    (10, migration_10),
+    (11, migration_11),
+    (12, migration_12),
+];
+
+const MIN_VER: u32 = MIGRATIONS[0].0;
+const FINAL_VER: u32 = MIGRATIONS[MIGRATIONS.len() - 1].0;
+
+fn delete_old_links(conn: &Connection) -> Result<usize> {
     trace!("starting delete old links");
-    conn.execute(
+    let deleted = conn.execute(
         "DELETE FROM link WHERE id IN (
-            SELECT L.id FROM link as L 
-            LEFT JOIN message_link as ML 
-            ON L.id = ML.link 
-            WHERE ML.id IS NULL 
+            SELECT L.id FROM link as L
+            LEFT JOIN message_link as ML
+            ON L.id = ML.link
+            WHERE ML.id IS NULL
         );",
         [],
     )?;
-    // todo: make this info and include the number of links deleted
-    // leave at trace as not super useful without number
-    trace!("finished delete old links");
-    Ok(())
+    info!("deleted {deleted} links no longer referenced by any message");
+    Ok(deleted)
 }
 
-const MIN_VER: u32 = 7;
-// be sure to increment this everytime a new migration is added
-const FINAL_VER: u32 = 11;
-
-#[inline(always)]
 pub(crate) fn migrate(conn: &mut Connection) -> Result<()> {
     let ver = queries::get_version(conn)?;
     info!("database version is currently: {ver} with target ver {FINAL_VER}");
@@ -210,24 +230,10 @@ pub(crate) fn migrate(conn: &mut Connection) -> Result<()> {
 
     trace!("starting migration transaction");
 
-    if ver < 7 {
-        migration_7(&tx)?;
-    }
-
-    if ver < 8 {
-        migration_8(&tx)?;
-    }
-
-    if ver < 9 {
-        migration_9(&tx)?;
-    }
-
-    if ver < 10 {
-        migration_10(&tx)?;
-    }
-
-    if ver < 11 {
-        migration_11(&tx)?;
+    for (version, migration) in MIGRATIONS {
+        if ver < version {
+            migration(&tx)?;
+        }
     }
     // delete old links we don't need
     delete_old_links(&tx)?;
@@ -339,14 +345,13 @@ mod tests {
     fn test_message_table() -> Result<()> {
         let table = get_table_info("message")?;
 
-        assert_eq!(table.rows.len(), 10);
+        assert_eq!(table.rows.len(), 9);
         table.assert_row("id", "INTEGER", 0, None, 1);
         table.assert_row("server", "INTEGER", 0, None, 0);
         table.assert_row("channel", "INTEGER", 0, None, 0);
         table.assert_row("created_at", "NUMERIC", 0, None, 0);
         table.assert_row("author", "INTEGER", 0, Some("NULL"), 0);
         table.assert_row("parsed_repost", "NUMERIC", 0, Some("NULL"), 0);
-        table.assert_row("parsed_wordle", "NUMERIC", 0, Some("NULL"), 0);
         table.assert_row("deleted", "NUMERIC", 0, Some("NULL"), 0);
         table.assert_row("checked_old", "NUMERIC", 0, Some("NULL"), 0);
         table.assert_row("parsed_embed", "NUMERIC", 0, Some("NULL"), 0);
@@ -394,7 +399,7 @@ mod tests {
     fn test_user_table() -> Result<()> {
         let table = get_table_info("user")?;
 
-        assert_eq!(table.rows.len(), 4);
+        assert_eq!(table.rows.len(), 3);
         table.assert_row("id", "INTEGER", 0, None, 1);
         table.assert_row("username", "TEXT", 1, None, 0);
         table.assert_row("bot", "BOOL", 1, None, 0);
@@ -403,20 +408,104 @@ mod tests {
     }
 
     #[test]
-    fn test_wordle_table() -> Result<()> {
-        let table = get_table_info("wordle")?;
+    fn test_wordle_table_dropped() -> Result<()> {
+        assert!(get_table_info("wordle")?.rows.is_empty());
+        Ok(())
+    }
 
-        assert_eq!(table.rows.len(), 4 + 5 * 6);
-        table.assert_row("message", "INTEGER", 0, None, 1);
-        table.assert_row("number", "INTEGER", 1, None, 0);
-        table.assert_row("score", "INTEGER", 1, None, 0);
-        table.assert_row("hardmode", "BOOLEAN", 1, None, 0);
-        for row in 1..=6 {
-            for col in 1..=5 {
-                table.assert_row(&format!("board_r{row}c{col}"), "INTEGER", 1, None, 0);
-            }
+    #[test]
+    fn test_image_table() -> Result<()> {
+        let table = get_table_info("image")?;
+
+        assert_eq!(table.rows.len(), 8);
+        table.assert_row("id", "INTEGER", 0, None, 1);
+        table.assert_row("url", "TEXT", 0, None, 0);
+        for col in 1..=5 {
+            table.assert_row(&format!("c{col}"), "TEXT", 1, None, 0);
         }
+        table.assert_row("hash", "TEXT", 1, None, 0);
+        Ok(())
+    }
 
+    #[test]
+    fn test_message_image_table() -> Result<()> {
+        let table = get_table_info("message_image")?;
+
+        assert_eq!(table.rows.len(), 3);
+        table.assert_row("id", "INTEGER", 0, None, 1);
+        table.assert_row("image", "INTEGER", 1, None, 0);
+        table.assert_row("message", "INTEGER", 1, None, 0);
+        Ok(())
+    }
+
+    #[test]
+    fn test_final_version_set() -> Result<()> {
+        let conn = get_migrated_db()?;
+        assert_eq!(queries::get_version(&conn)?, FINAL_VER);
+        Ok(())
+    }
+
+    #[test]
+    fn test_migrations_sorted_and_contiguous() {
+        for pair in MIGRATIONS.windows(2) {
+            assert_eq!(pair[0].0 + 1, pair[1].0);
+        }
+    }
+
+    #[test]
+    fn test_migrate_is_idempotent() -> Result<()> {
+        let mut conn = get_migrated_db()?;
+        migrate(&mut conn)?;
+        assert_eq!(queries::get_version(&conn)?, FINAL_VER);
+        Ok(())
+    }
+
+    #[test]
+    fn test_migrate_from_previous_version() -> Result<()> {
+        // simulate a database that was last migrated before the index migration
+        let mut conn = Connection::open_in_memory()?;
+        for (version, migration) in &MIGRATIONS[..MIGRATIONS.len() - 1] {
+            migration(&conn)?;
+            assert_eq!(queries::get_version(&conn)?, *version);
+        }
+        migrate(&mut conn)?;
+        assert_eq!(queries::get_version(&conn)?, FINAL_VER);
+        Ok(())
+    }
+
+    #[test]
+    fn test_join_table_indexes_exist() -> Result<()> {
+        let conn = get_migrated_db()?;
+        let indexes: Vec<String> = conn
+            .prepare("SELECT name FROM sqlite_master WHERE type = 'index'")?
+            .query_map([], |row| row.get(0))?
+            .collect::<Result<_>>()?;
+        for expected in [
+            "idx_message_link_link",
+            "idx_message_link_message",
+            "idx_message_image_image",
+            "idx_message_image_message",
+            "idx_image_hash",
+            "idx_msg_server_created",
+        ] {
+            assert!(
+                indexes.iter().any(|i| i == expected),
+                "missing index {expected}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_delete_old_links() -> Result<()> {
+        let conn = get_migrated_db()?;
+        // only the link table is relevant here
+        conn.pragma_update(None, "foreign_keys", "OFF")?;
+        conn.execute("INSERT INTO link (id, link) VALUES (1, 'a'), (2, 'b')", [])?;
+        conn.execute("INSERT INTO message_link (link, message) VALUES (1, 1)", [])?;
+        assert_eq!(delete_old_links(&conn)?, 1);
+        let remaining: String = conn.query_row("SELECT link FROM link", [], |r| r.get(0))?;
+        assert_eq!(remaining, "a");
         Ok(())
     }
 

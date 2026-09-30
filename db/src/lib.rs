@@ -2,6 +2,8 @@ mod migrations;
 mod queries;
 mod read_only_db;
 pub mod structs;
+#[cfg(test)]
+mod tests;
 mod writeable_db;
 
 pub use read_only_db::ReadOnlyDb;
@@ -15,9 +17,9 @@ pub(crate) mod connections {
     pub trait GetConnectionImmutable {
         fn get_connection(&self) -> &Connection;
 
-        #[inline(always)]
+        #[inline]
         fn execute<P: Params>(&self, sql: &str, params: P) -> Result<()> {
-            self.get_connection().execute(sql, params)?;
+            self.get_connection().prepare_cached(sql)?.execute(params)?;
             Ok(())
         }
     }
@@ -65,35 +67,17 @@ impl WriteableDb for WriteableConn {}
 const DB_PATH: &str = "./repost.db3";
 const IN_MEMORY_DB: bool = false;
 
-#[inline(always)]
-fn open_database_ro() -> Result<Connection> {
-    if IN_MEMORY_DB {
-        Connection::open_in_memory_with_flags(OpenFlags::SQLITE_OPEN_READ_ONLY)
-    } else {
-        Connection::open_with_flags(DB_PATH, OpenFlags::SQLITE_OPEN_READ_ONLY)
-    }
-}
-
-#[inline(always)]
-fn open_database_rw() -> Result<Connection> {
-    if IN_MEMORY_DB {
-        Connection::open_in_memory()
-    } else {
-        Connection::open(DB_PATH)
-    }
-}
-
-#[inline(always)]
 fn open_database(read_only: bool) -> Result<Connection> {
-    if read_only {
-        open_database_ro()
-    } else {
-        open_database_rw()
+    match (IN_MEMORY_DB, read_only) {
+        (true, true) => Connection::open_in_memory_with_flags(OpenFlags::SQLITE_OPEN_READ_ONLY),
+        (true, false) => Connection::open_in_memory(),
+        (false, true) => Connection::open_with_flags(DB_PATH, OpenFlags::SQLITE_OPEN_READ_ONLY),
+        (false, false) => Connection::open(DB_PATH),
     }
 }
 
 impl ReadOnlyConn {
-    #[inline(always)]
+    #[inline]
     fn new() -> Result<ReadOnlyConn> {
         Ok(ReadOnlyConn {
             conn: open_database(true)?,
@@ -102,11 +86,19 @@ impl ReadOnlyConn {
 }
 
 impl WriteableConn {
-    #[inline(always)]
+    #[inline]
     fn new() -> Result<WriteableConn> {
         Ok(WriteableConn {
             conn: open_database(false)?,
         })
+    }
+
+    /// A fully migrated, private, in-memory database for tests
+    #[cfg(test)]
+    pub(crate) fn new_in_memory() -> Result<WriteableConn> {
+        let mut conn = Connection::open_in_memory()?;
+        migrations::migrate(&mut conn)?;
+        Ok(WriteableConn { conn })
     }
 }
 
@@ -132,6 +124,7 @@ where
 {
     f(WriteableConn::new()?)
 }
+
 #[inline]
 pub fn read_only_db_call<F, T>(f: F) -> Result<T>
 where

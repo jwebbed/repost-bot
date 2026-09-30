@@ -23,12 +23,12 @@ use handler::Handler;
 
 fn migrate_db() {
     match migrate() {
-        Ok(_) => info!("sucessfully loaded and migrated db"),
+        Ok(()) => info!("sucessfully loaded and migrated db"),
         Err(why) => {
             error!("Failed to migrate, exiting {why:?}");
             process::exit(-1);
         }
-    };
+    }
 }
 
 #[tokio::main]
@@ -54,7 +54,7 @@ async fn main() {
         .union(GatewayIntents::MESSAGE_CONTENT);
 
     let mut client = Client::builder(&token, intents)
-        .event_handler(Handler::new())
+        .event_handler(Handler::default())
         .await
         .expect("Err creating client");
 
@@ -63,6 +63,6 @@ async fn main() {
     // Shards will automatically attempt to reconnect, and will perform
     // exponential backoff until it reconnects.
     if let Err(why) = client.start().await {
-        error!("Client error: {:?}", why);
+        error!("Client error: {why:?}");
     }
 }

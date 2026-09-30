@@ -23,7 +23,7 @@ pub struct Message {
 
 impl Message {
     #[allow(clippy::too_many_arguments)]
-    #[inline(always)]
+    #[inline]
     pub const fn new(
         id: u64,
         server: u64,
@@ -48,17 +48,17 @@ impl Message {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     pub const fn is_repost_parsed(&self) -> bool {
         self.parsed_repost.is_some()
     }
 
-    #[inline(always)]
+    #[inline]
     pub const fn is_embed_parsed(&self) -> bool {
         self.parsed_embed.is_some()
     }
 
-    #[inline(always)]
+    #[inline]
     pub const fn is_deleted(&self) -> bool {
         self.deleted.is_some()
     }
@@ -72,7 +72,7 @@ impl Message {
     /// messages should return false. If possible to determine that not all
     /// messages need to be checked, only the messages that need to be checked
     /// should start returning false to reduce backlog.
-    #[inline(always)]
+    #[inline]
     pub const fn is_checked_old(&self) -> bool {
         self.checked_old.is_some()
     }
@@ -136,5 +136,37 @@ mod tests {
         let message2 = Message::new(1, 2, 2, None, Utc::now(), None, None, None, None);
 
         assert_eq!(message1, message2);
+    }
+
+    #[test]
+    fn test_message_ordering_by_id() {
+        let older = Message::new(1, 1, 1, None, Utc::now(), None, None, None, None);
+        let newer = Message::new(2, 1, 1, None, Utc::now(), None, None, None, None);
+        assert!(older < newer);
+    }
+
+    #[test]
+    fn test_is_recent() {
+        let now = Message::new(1, 1, 1, None, Utc::now(), None, None, None, None);
+        assert!(now.is_recent());
+
+        let created_at = Utc::now() - chrono::Duration::seconds(60);
+        let old = Message::new(1, 1, 1, None, created_at, None, None, None, None);
+        assert!(!old.is_recent());
+    }
+
+    #[test]
+    fn test_get_duration() {
+        let created_at = Utc::now();
+        let msg = Message::new(1, 1, 1, None, created_at, None, None, None, None);
+        assert_eq!(
+            msg.get_duration(created_at + chrono::Duration::seconds(90)),
+            Some(Duration::from_secs(90))
+        );
+        // durations into the past can't be represented
+        assert_eq!(
+            msg.get_duration(created_at - chrono::Duration::seconds(1)),
+            None
+        );
     }
 }

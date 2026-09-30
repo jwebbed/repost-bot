@@ -5,7 +5,7 @@ use crate::structs::repost::{RepostSet, RepostType};
 use crate::structs::{Post, PostProcessor, ProcessedPost};
 use filter::filtered_url;
 
-use db::{get_read_only_db, read_only_db_call, writable_db_call, ReadOnlyDb, WriteableDb};
+use db::{ReadOnlyDb, WriteableDb, get_read_only_db, read_only_db_call, writable_db_call};
 use linkify::{LinkFinder, LinkKind};
 use log::{error, info};
 use regex::Regex;
@@ -21,7 +21,11 @@ const IGNORED_DOMAINS: [&str; 5] = [
 ];
 
 static IGNORED_DOMAIN_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(format!(r"https?://({})/?\S*", IGNORED_DOMAINS.join("|")).as_str()).unwrap()
+    Regex::new(&format!(
+        r"^https?://({})([/?#]|$)",
+        IGNORED_DOMAINS.join("|")
+    ))
+    .unwrap()
 });
 
 /// returns true if the input link is one of the ignored domains
@@ -30,36 +34,34 @@ fn ignored_domain(text: &str) -> bool {
 }
 
 #[derive(Debug)]
-pub struct LinkProcessor {
-    post: Post,
-}
+pub struct LinkProcessor;
 
-struct Links {
+pub struct Links {
     msg_id: u64,
     server_id: u64,
-    links: Box<[Url]>,
+    links: Vec<Url>,
 }
 
 impl PostProcessor for LinkProcessor {
-    fn new(post: Post) -> LinkProcessor {
-        LinkProcessor { post }
-    }
+    type Processed = Links;
 
-    async fn process(&self) -> Result<impl ProcessedPost> {
-        let links = get_links(self.post.content())
-            .map(|link| filtered_url(&link))
-            .filter_map(|url| match url {
+    async fn process(post: &Post) -> Result<Links> {
+        let mut links: Vec<Url> = get_links(post.content())
+            .filter_map(|link| match filtered_url(link) {
                 Ok(url) => Some(url),
                 Err(why) => {
-                    error!("Failed to filter url: {why:?}");
+                    error!("Failed to filter url {link}: {why:?}");
                     None
                 }
             })
             .collect();
+        // the same link posted twice in one message is still one post
+        links.sort_unstable();
+        links.dedup();
 
         Ok(Links {
-            msg_id: self.post.id(),
-            server_id: self.post.server_id(),
+            msg_id: post.id(),
+            server_id: post.server_id(),
             links,
         })
     }
@@ -67,7 +69,7 @@ impl PostProcessor for LinkProcessor {
 
 impl ProcessedPost for Links {
     fn get_reposts(&self) -> Result<RepostSet> {
-        let mut reposts = RepostSet::new();
+        let mut reposts = RepostSet::default();
         if !self.links.is_empty() {
             let db = get_read_only_db()?;
             for link in &self.links {
@@ -76,7 +78,7 @@ impl ProcessedPost for Links {
                 }
             }
         }
-        if reposts.len() > 0 {
+        if !reposts.is_empty() {
             info!("Found {} reposts: {reposts:?}", reposts.len());
         }
 
@@ -84,20 +86,22 @@ impl ProcessedPost for Links {
     }
 
     fn store_post(&self) -> Result<()> {
-        for link in &self.links {
-            writable_db_call(|mut db| db.insert_link(link.as_str(), self.msg_id))?;
+        if !self.links.is_empty() {
+            writable_db_call(|mut db| {
+                db.insert_links(self.links.iter().map(Url::as_str), self.msg_id)
+            })?;
         }
         Ok(())
     }
 }
 
-fn get_links(msg: &str) -> impl Iterator<Item = Box<str>> + use<'_> {
+fn get_links(msg: &str) -> impl Iterator<Item = &str> {
     let mut finder = LinkFinder::new();
     finder.kinds(&[LinkKind::Url]);
     finder
         .links(msg)
-        .filter(|link| !ignored_domain(link.as_str()))
-        .map(|x| x.as_str().into())
+        .map(|link| link.as_str())
+        .filter(|link| !ignored_domain(link))
 }
 
 pub fn get_reposts_for_message_id(message_id: u64) -> Result<RepostSet> {
@@ -116,10 +120,7 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(links.len(), 1);
-        assert_eq!(
-            links[0],
-            "https://twitter.com/user/status/idnumber?s=20".into()
-        );
+        assert_eq!(links[0], "https://twitter.com/user/status/idnumber?s=20");
     }
 
     #[test]
@@ -131,8 +132,8 @@ mod tests {
         .collect::<Vec<_>>();
 
         assert_eq!(links.len(), 2);
-        assert!(links.contains(&"https://twitter.com/user/status/idnumber?s=20".into()));
-        assert!(links.contains(&"https://www.bbc.com/news/article".into()));
+        assert!(links.contains(&"https://twitter.com/user/status/idnumber?s=20"));
+        assert!(links.contains(&"https://www.bbc.com/news/article"));
     }
 
     #[test]
@@ -147,8 +148,8 @@ mod tests {
         .collect::<Vec<_>>();
 
         assert_eq!(links.len(), 2);
-        assert!(links.contains(&"https://www.bbc.com/news/article".into()));
-        assert!(links.contains(&"https://discord.com/developers/docs/intro".into()));
+        assert!(links.contains(&"https://www.bbc.com/news/article"));
+        assert!(links.contains(&"https://discord.com/developers/docs/intro"));
     }
 
     #[test]
@@ -217,6 +218,55 @@ mod tests {
                 .collect::<Vec<_>>()
                 .len(),
             0
+        );
+    }
+
+    #[test]
+    fn test_ignored_domain_only_matches_host() {
+        assert!(ignored_domain("https://tenor.com/view/some-gif"));
+        assert!(ignored_domain("http://heardle.app"));
+        // the ignored domain appearing elsewhere in the link doesn't count
+        assert!(!ignored_domain(
+            "https://example.com/?next=https://tenor.com/view/some-gif"
+        ));
+        // nor does a domain that merely starts with an ignored domain
+        assert!(!ignored_domain("https://heardle.application.com/"));
+    }
+
+    #[tokio::test]
+    async fn test_process_filters_and_dedupes_links() {
+        let db_message =
+            db::structs::Message::new(1, 2, 3, None, chrono::Utc::now(), None, None, None, None);
+        let msg: serenity::model::channel::Message = serde_json::from_value(serde_json::json!({
+            "id": "1",
+            "channel_id": "3",
+            "author": { "id": "4", "username": "user", "discriminator": "0000", "avatar": null },
+            "content": "https://x.com/User/status/1?s=20 https://twitter.com/user/status/1 \
+                        https://tenor.com/view/gif https://example.com/?utm_source=a&b=c",
+            "timestamp": "2024-01-01T00:00:00Z",
+            "edited_timestamp": null,
+            "tts": false,
+            "mention_everyone": false,
+            "mentions": [],
+            "mention_roles": [],
+            "attachments": [],
+            "embeds": [],
+            "pinned": false,
+            "type": 0,
+        }))
+        .unwrap();
+        let post = Post::from_message(&db_message, &msg);
+        let links = LinkProcessor::process(&post).await.unwrap();
+
+        assert_eq!(links.msg_id, 1);
+        assert_eq!(links.server_id, 2);
+        let links: Vec<&str> = links.links.iter().map(Url::as_str).collect();
+        assert_eq!(
+            links,
+            vec![
+                "https://example.com/?b=c",
+                "https://twitter.com/user/status/1"
+            ]
         );
     }
 }
