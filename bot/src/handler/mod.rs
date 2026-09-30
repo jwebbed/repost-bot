@@ -12,7 +12,7 @@ use images::ImageProcessor;
 use log::{debug, error, info, trace, warn};
 use rand::rngs::SmallRng;
 use rand::seq::IndexedRandom;
-use rand::Rng;
+use rand::{Rng, RngExt};
 use rand::SeedableRng;
 use serenity::all::GuildMemberUpdateEvent;
 use serenity::{

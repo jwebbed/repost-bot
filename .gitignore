@@ -1,3 +1,5 @@
 /target
 *.db3
 *.tar.gz
+*.d
+.DS_store

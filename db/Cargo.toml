@@ -14,8 +14,8 @@ chrono = "0.4"
 paste = "1.0"
 
 [dependencies.rusqlite]
-version = "0.33"
-features = ["chrono"]
+version = "0.40"
+features = ["chrono", "fallible_uint"]
 
 [features]
 bundled = ["rusqlite/bundled"]
