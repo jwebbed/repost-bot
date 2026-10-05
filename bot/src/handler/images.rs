@@ -31,6 +31,8 @@ static HASHER: LazyLock<Hasher> = LazyLock::new(|| {
 
 /// Images with a hamming distance below this are considered the same image
 const MATCH_DISTANCE_THRESHOLD: u32 = 5;
+// the db only guarantees finding hashes that differ by fewer than HASH_CHUNKS bits
+const _: () = assert!(MATCH_DISTANCE_THRESHOLD as usize <= db::HASH_CHUNKS);
 
 #[derive(Debug)]
 pub struct ImageProcessor;

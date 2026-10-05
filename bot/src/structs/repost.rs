@@ -2,12 +2,12 @@ use crate::structs::reply::{Reply, ReplyType};
 
 use chrono::{DateTime, Utc};
 use db::structs::Message;
-use humantime::format_duration;
 use itertools::Itertools;
 use log::info;
 use serenity::model;
 use serenity::model::id::MessageId;
 use std::collections::{BTreeMap, HashSet};
+use std::time::Duration;
 
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
 pub enum RepostType {
@@ -136,9 +136,40 @@ fn prefix_text(repost_types: &HashSet<RepostType>, long_text: bool) -> String {
 fn repost_text(original_message: &Message, reply_to_created_at: DateTime<Utc>) -> String {
     let uri = build_uri(original_message);
     match original_message.get_duration(reply_to_created_at) {
-        Some(duration) => format!("{} {uri}", format_duration(duration)),
+        Some(duration) => format!("{} {uri}", format_age(duration)),
         None => uri,
     }
+}
+
+/// Units used to describe how old a message is, largest first
+const AGE_UNITS: [(u64, &str); 6] = [
+    (365 * 24 * 60 * 60, "y"),
+    (30 * 24 * 60 * 60, "mo"),
+    (24 * 60 * 60, "d"),
+    (60 * 60, "h"),
+    (60, "m"),
+    (1, "s"),
+];
+
+/// Formats a duration using its largest unit and the unit below it, e.g.
+/// "1d 14h" or "22h" rather than every unit down to milliseconds
+fn format_age(duration: Duration) -> String {
+    let mut remaining = duration.as_secs();
+    let Some(largest) = AGE_UNITS.iter().position(|(secs, _)| remaining >= *secs) else {
+        return "0s".to_string();
+    };
+    let mut age = String::new();
+    for (secs, unit) in AGE_UNITS.iter().skip(largest).take(2) {
+        let count = remaining / secs;
+        remaining %= secs;
+        if count > 0 {
+            if !age.is_empty() {
+                age.push(' ');
+            }
+            age.push_str(&format!("{count}{unit}"));
+        }
+    }
+    age
 }
 
 #[inline]
@@ -417,5 +448,28 @@ mod tests {
                 .generate_reply_for_message_id(msg_id, channel_id, get_datetime(2, 0, 0))
                 .is_none()
         );
+    }
+
+    #[test]
+    fn test_format_age() {
+        let secs = Duration::from_secs;
+        let (minute, hour, day) = (60, 60 * 60, 24 * 60 * 60);
+        assert_eq!(format_age(Duration::from_millis(359)), "0s");
+        assert_eq!(format_age(secs(45)), "45s");
+        assert_eq!(format_age(secs(5 * minute + 3)), "5m 3s");
+        assert_eq!(format_age(secs(hour)), "1h");
+        assert_eq!(format_age(secs(22 * hour + 52 * minute + 3)), "22h 52m");
+        // the screenshots from discord
+        assert_eq!(
+            format_age(secs(day + 14 * hour + 24 * minute + 54) + Duration::from_millis(145)),
+            "1d 14h"
+        );
+        assert_eq!(
+            format_age(secs(61 * day + 18 * hour + 54 * minute)),
+            "2mo 1d"
+        );
+        // only adjacent units are shown
+        assert_eq!(format_age(secs(day + 5 * minute)), "1d");
+        assert_eq!(format_age(secs(400 * day)), "1y 1mo");
     }
 }

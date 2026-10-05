@@ -1,5 +1,5 @@
 use crate::connections::GetConnectionImmutable;
-use crate::queries::{self, MESSAGE_COLUMN_COUNT, hash_samples, message_columns, message_from_row};
+use crate::queries::{self, MESSAGE_COLUMN_COUNT, hash_chunks, message_columns, message_from_row};
 use crate::structs::{Channel, Link, Message, Reply, RepostCount, ReposterCount};
 
 use rusqlite::{OptionalExtension, Result};
@@ -110,9 +110,10 @@ pub trait ReadOnlyDb: GetConnectionImmutable {
             .collect()
     }
 
-    /// Returns messages in `server` (other than `current_msg_id`) whose image
-    /// hash exactly matches `hash` or shares at least 4 of the 5 sampled
-    /// characters. Callers are expected to compute the real distance.
+    /// Returns messages in `server` (other than `current_msg_id`) with an image
+    /// hash sharing at least one chunk with `hash`, see [`crate::HASH_CHUNKS`].
+    /// This includes every hash that differs by fewer than that many bits.
+    /// Callers are expected to compute the real distance.
     #[inline]
     fn hash_matches(
         &self,
@@ -120,7 +121,7 @@ pub trait ReadOnlyDb: GetConnectionImmutable {
         server: u64,
         current_msg_id: u64,
     ) -> Result<Vec<(Message, String)>> {
-        let [c1, c2, c3, c4, c5] = hash_samples(hash)?;
+        let [h1, h2, h3, h4, h5] = hash_chunks(hash)?;
         let mut stmt = self.get_connection().prepare_cached(concat!(
             "SELECT ",
             message_columns!("M"),
@@ -131,19 +132,13 @@ pub trait ReadOnlyDb: GetConnectionImmutable {
             JOIN server AS S ON M.server=S.id
             JOIN channel AS C ON M.channel=C.id
             WHERE
-            (   I.hash = (?6) OR
-                ( I.c1 = (?1) AND I.c2 = (?2) AND I.c3 = (?3) AND I.c4 = (?4) ) OR
-                ( I.c2 = (?2) AND I.c3 = (?3) AND I.c4 = (?4) AND I.c5 = (?5) ) OR
-                ( I.c3 = (?3) AND I.c4 = (?4) AND I.c5 = (?5) AND I.c1 = (?1) ) OR
-                ( I.c4 = (?4) AND I.c5 = (?5) AND I.c1 = (?1) AND I.c2 = (?2) ) OR
-                ( I.c5 = (?5) AND I.c1 = (?1) AND I.c2 = (?2) AND I.c3 = (?3) )
-            )
-            AND S.id = (?7)
-            AND M.id != (?8)
+            ( I.h1 = (?1) OR I.h2 = (?2) OR I.h3 = (?3) OR I.h4 = (?4) OR I.h5 = (?5) )
+            AND S.id = (?6)
+            AND M.id != (?7)
             AND C.visible = TRUE
             AND M.deleted IS NULL"
         ))?;
-        stmt.query_map((c1, c2, c3, c4, c5, hash, server, current_msg_id), |row| {
+        stmt.query_map((h1, h2, h3, h4, h5, server, current_msg_id), |row| {
             Ok((message_from_row(row, 0)?, row.get(MESSAGE_COLUMN_COUNT)?))
         })?
         .collect()

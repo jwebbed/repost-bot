@@ -1,4 +1,6 @@
 use crate::structs::Message;
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use rusqlite::{Connection, Error, OptionalExtension, Result, Row};
 
 /// Expands to the comma separated list of message columns, in the order
@@ -52,22 +54,41 @@ pub(crate) fn message_from_row(row: &Row<'_>, start: usize) -> Result<Message> {
     ))
 }
 
-/// Byte offsets of the characters of a base64 image hash that are stored in
-/// the `c1`..`c5` columns of the `image` table and used to find near matches.
+/// Number of chunks an image hash is split into for finding near matches.
 ///
-/// These offsets are baked into existing rows, so they must never change
-/// without a migration that recomputes the columns.
-const HASH_SAMPLE_OFFSETS: [usize; 5] = [0, 2, 5, 9, 14];
+/// By the pigeonhole principle, two hashes that differ in fewer bits than
+/// there are chunks must have at least one identical chunk, so looking up
+/// hashes sharing any chunk finds every hash within that distance. Each
+/// chunk is stored in its own indexed column, `h1` to `h5` of `image`.
+pub const HASH_CHUNKS: usize = 5;
 
-/// Returns the single character samples of `hash` stored in `c1`..`c5`.
-pub(crate) fn hash_samples(hash: &str) -> Result<[&str; 5]> {
-    let min_len = HASH_SAMPLE_OFFSETS[HASH_SAMPLE_OFFSETS.len() - 1] + 1;
-    if !hash.is_ascii() || hash.len() < min_len {
-        return Err(Error::ToSqlConversionFailure(
-            format!("image hash {hash:?} must be ascii and at least {min_len} characters").into(),
-        ));
+/// Splits a base64 encoded image hash into [`HASH_CHUNKS`] integers of
+/// near equal size, each chunk being the big endian value of its bytes.
+pub(crate) fn hash_chunks(hash: &str) -> Result<[i64; HASH_CHUNKS]> {
+    let invalid = |why: String| Error::ToSqlConversionFailure(why.into());
+    let bytes = BASE64
+        .decode(hash)
+        .map_err(|why| invalid(format!("image hash {hash:?} is not base64: {why}")))?;
+    // chunks must fit in an i64 to be stored as an sqlite integer
+    if bytes.len() < HASH_CHUNKS || bytes.len() > HASH_CHUNKS * 7 {
+        return Err(invalid(format!(
+            "image hash {hash:?} must decode to {HASH_CHUNKS} to {} bytes",
+            HASH_CHUNKS * 7
+        )));
     }
-    Ok(HASH_SAMPLE_OFFSETS.map(|i| &hash[i..=i]))
+
+    let (size, remainder) = (bytes.len() / HASH_CHUNKS, bytes.len() % HASH_CHUNKS);
+    let mut chunks = [0; HASH_CHUNKS];
+    let mut start = 0;
+    for (i, chunk) in chunks.iter_mut().enumerate() {
+        // the first chunks take one extra byte each when the bytes don't divide evenly
+        let end = start + size + usize::from(i < remainder);
+        *chunk = bytes[start..end]
+            .iter()
+            .fold(0, |acc, byte| (acc << 8) | i64::from(*byte));
+        start = end;
+    }
+    Ok(chunks)
 }
 
 #[inline]
@@ -97,34 +118,58 @@ pub(crate) fn get_message(conn: &Connection, msg_id: u64) -> Result<Option<Messa
 mod tests {
     use super::*;
 
+    fn encode(bytes: &[u8]) -> String {
+        BASE64.encode(bytes)
+    }
+
     #[test]
-    fn test_hash_samples_match_legacy_sampling() {
-        // The original implementation sampled with chained `nth` calls,
-        // ensure the offsets still line up with that behaviour
-        let hash = "MuNy4INik8O0wRjlGjZNdmlPbA9kO9f50/hDek3aRcY=";
-        let mut chars = hash.chars();
-        let legacy = [
-            chars.next().unwrap().to_string(),
-            chars.nth(1).unwrap().to_string(),
-            chars.nth(2).unwrap().to_string(),
-            chars.nth(3).unwrap().to_string(),
-            chars.nth(4).unwrap().to_string(),
-        ];
+    fn test_hash_chunks_split() {
+        // a 256 bit hash splits into chunks of 7, 7, 6, 6, 6 bytes
+        let bytes: Vec<u8> = (1..=32).collect();
+        let chunks = hash_chunks(&encode(&bytes)).unwrap();
         assert_eq!(
-            hash_samples(hash).unwrap(),
-            legacy.each_ref().map(String::as_str)
+            chunks,
+            [
+                0x01_02_03_04_05_06_07,
+                0x08_09_0a_0b_0c_0d_0e,
+                0x0f_10_11_12_13_14,
+                0x15_16_17_18_19_1a,
+                0x1b_1c_1d_1e_1f_20,
+            ]
         );
     }
 
     #[test]
-    fn test_hash_samples_rejects_short_hash() {
-        assert!(hash_samples("abcdefghijklmn").is_err());
-        assert!(hash_samples("abcdefghijklmno").is_ok());
+    fn test_hash_chunks_max_values_fit() {
+        let chunks = hash_chunks(&encode(&[0xff; 35])).unwrap();
+        assert!(chunks.iter().all(|chunk| *chunk == 0x00ff_ffff_ffff_ffff));
     }
 
     #[test]
-    fn test_hash_samples_rejects_non_ascii() {
-        assert!(hash_samples("ééééééééééééééé").is_err());
+    fn test_hash_chunks_rejects_invalid() {
+        assert!(hash_chunks("not base64!").is_err());
+        assert!(hash_chunks(&encode(&[1, 2, 3, 4])).is_err());
+        assert!(hash_chunks(&encode(&[0; 36])).is_err());
+        assert!(hash_chunks(&encode(&[0; 5])).is_ok());
+    }
+
+    #[test]
+    fn test_hashes_within_distance_share_a_chunk() {
+        // flipping fewer bits than there are chunks always leaves one untouched,
+        // whichever bits are flipped
+        let bytes: Vec<u8> = (100..132).collect();
+        let original = hash_chunks(&encode(&bytes)).unwrap();
+        for bits in [[0, 60, 120, 200], [7, 8, 9, 255], [55, 56, 111, 112]] {
+            let mut flipped = bytes.clone();
+            for bit in bits {
+                flipped[bit / 8] ^= 1 << (bit % 8);
+            }
+            let chunks = hash_chunks(&encode(&flipped)).unwrap();
+            assert!(
+                original.iter().zip(chunks).any(|(a, b)| *a == b),
+                "no shared chunk flipping bits {bits:?}"
+            );
+        }
     }
 
     #[test]

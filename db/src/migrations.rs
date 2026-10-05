@@ -1,5 +1,5 @@
 use super::queries;
-use log::{info, trace};
+use log::{info, trace, warn};
 
 use rusqlite::{Connection, Result};
 
@@ -183,17 +183,72 @@ migration![
     "CREATE INDEX IF NOT EXISTS idx_msg_server_created ON message (server, created_at);"
 ];
 
+/// Replaces the single character samples of each image hash (`c1` to `c5`),
+/// which missed some near matches, with chunks of the hash (`h1` to `h5`)
+/// that are guaranteed to find them, see [`queries::HASH_CHUNKS`].
+fn migration_13(conn: &Connection) -> Result<()> {
+    trace!("running migration 13");
+    for column in ["h1", "h2", "h3", "h4", "h5"] {
+        conn.execute(
+            &format!("ALTER TABLE image ADD COLUMN {column} INTEGER;"),
+            [],
+        )?;
+    }
+
+    let images: Vec<(i64, String)> = conn
+        .prepare("SELECT id, hash FROM image;")?
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<Result<_>>()?;
+    let mut update =
+        conn.prepare("UPDATE image SET h1=?1, h2=?2, h3=?3, h4=?4, h5=?5 WHERE id=?6;")?;
+    let mut updated = 0;
+    for (id, hash) in &images {
+        match queries::hash_chunks(hash) {
+            Ok([h1, h2, h3, h4, h5]) => {
+                update.execute((h1, h2, h3, h4, h5, id))?;
+                updated += 1;
+            }
+            Err(why) => warn!("image {id} has an invalid hash and will never match: {why}"),
+        }
+    }
+    info!(
+        "computed hash chunks for {updated} of {} images",
+        images.len()
+    );
+
+    for statement in [
+        "DROP INDEX IF EXISTS idx_image;",
+        "DROP INDEX IF EXISTS idx_image_hash;",
+        "ALTER TABLE image DROP COLUMN c1;",
+        "ALTER TABLE image DROP COLUMN c2;",
+        "ALTER TABLE image DROP COLUMN c3;",
+        "ALTER TABLE image DROP COLUMN c4;",
+        "ALTER TABLE image DROP COLUMN c5;",
+        "CREATE INDEX idx_image_h1 ON image (h1);",
+        "CREATE INDEX idx_image_h2 ON image (h2);",
+        "CREATE INDEX idx_image_h3 ON image (h3);",
+        "CREATE INDEX idx_image_h4 ON image (h4);",
+        "CREATE INDEX idx_image_h5 ON image (h5);",
+    ] {
+        conn.execute(statement, [])?;
+    }
+    queries::set_version(conn, 13)?;
+    trace!("finished migration 13");
+    Ok(())
+}
+
 type Migration = fn(&Connection) -> Result<()>;
 
 /// Every migration in the order it should be applied, the last entry
 /// determines the final version of the database.
-const MIGRATIONS: [(u32, Migration); 6] = [
+const MIGRATIONS: [(u32, Migration); 7] = [
     (7, migration_7),
     (8, migration_8),
     (9, migration_9),
     (10, migration_10),
     (11, migration_11),
     (12, migration_12),
+    (13, migration_13),
 ];
 
 const MIN_VER: u32 = MIGRATIONS[0].0;
@@ -420,10 +475,10 @@ mod tests {
         assert_eq!(table.rows.len(), 8);
         table.assert_row("id", "INTEGER", 0, None, 1);
         table.assert_row("url", "TEXT", 0, None, 0);
-        for col in 1..=5 {
-            table.assert_row(&format!("c{col}"), "TEXT", 1, None, 0);
-        }
         table.assert_row("hash", "TEXT", 1, None, 0);
+        for col in 1..=5 {
+            table.assert_row(&format!("h{col}"), "INTEGER", 0, None, 0);
+        }
         Ok(())
     }
 
@@ -462,7 +517,7 @@ mod tests {
 
     #[test]
     fn test_migrate_from_previous_version() -> Result<()> {
-        // simulate a database that was last migrated before the index migration
+        // simulate a database that was last migrated before the latest migration
         let mut conn = Connection::open_in_memory()?;
         for (version, migration) in &MIGRATIONS[..MIGRATIONS.len() - 1] {
             migration(&conn)?;
@@ -485,14 +540,66 @@ mod tests {
             "idx_message_link_message",
             "idx_message_image_image",
             "idx_message_image_message",
-            "idx_image_hash",
             "idx_msg_server_created",
+            "idx_image_h1",
+            "idx_image_h2",
+            "idx_image_h3",
+            "idx_image_h4",
+            "idx_image_h5",
         ] {
             assert!(
                 indexes.iter().any(|i| i == expected),
                 "missing index {expected}"
             );
         }
+        Ok(())
+    }
+
+    #[test]
+    fn test_migration_13_converts_existing_hashes() -> Result<()> {
+        let valid = "MuNy4INik8O0wRjlGjZNdmlPbA9kO9f50/hDek3aRcY=";
+        let mut conn = Connection::open_in_memory()?;
+        for (version, migration) in &MIGRATIONS {
+            if *version == 13 {
+                break;
+            }
+            migration(&conn)?;
+        }
+        conn.execute(
+            "INSERT INTO image (id, url, c1, c2, c3, c4, c5, hash) VALUES
+                (1, 'a', 'M', 'N', '4', 'k', 'O', ?1),
+                (2, 'b', 'x', 'x', 'x', 'x', 'x', 'not a hash')",
+            [valid],
+        )?;
+
+        migrate(&mut conn)?;
+
+        let chunks = |id: i64| -> Result<[Option<i64>; 5]> {
+            conn.query_row(
+                "SELECT h1, h2, h3, h4, h5 FROM image WHERE id = ?1",
+                [id],
+                |r| Ok([r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?]),
+            )
+        };
+        assert_eq!(chunks(1)?, queries::hash_chunks(valid)?.map(Some));
+        assert_eq!(chunks(2)?, [None; 5]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_hash_matches_query_uses_indexes() -> Result<()> {
+        let conn = get_migrated_db()?;
+        let plan: Vec<String> = conn
+            .prepare(
+                "EXPLAIN QUERY PLAN SELECT id FROM image
+                WHERE h1 = 1 OR h2 = 2 OR h3 = 3 OR h4 = 4 OR h5 = 5",
+            )?
+            .query_map([], |row| row.get(3))?
+            .collect::<Result<_>>()?;
+        assert!(
+            plan.iter().all(|step| !step.starts_with("SCAN")),
+            "hash lookup should not scan the image table: {plan:?}"
+        );
         Ok(())
     }
 

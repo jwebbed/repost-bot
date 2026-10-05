@@ -6,6 +6,7 @@ pub mod structs;
 mod tests;
 mod writeable_db;
 
+pub use queries::HASH_CHUNKS;
 pub use read_only_db::ReadOnlyDb;
 pub use writeable_db::WriteableDb;
 

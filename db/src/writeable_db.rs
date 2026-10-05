@@ -1,6 +1,6 @@
 use crate::ReadOnlyDb;
 use crate::connections::GetConnectionMutable;
-use crate::queries::{self, hash_samples};
+use crate::queries::{self, hash_chunks};
 use crate::structs::Message;
 
 use chrono::{DateTime, Utc};
@@ -210,7 +210,7 @@ pub trait WriteableDb: GetConnectionMutable + ReadOnlyDb {
         let tx = self.get_mutable_connection().transaction()?;
         {
             let mut insert_image = tx.prepare_cached(
-                "INSERT INTO image (c1, c2, c3, c4, c5, hash, url)
+                "INSERT INTO image (h1, h2, h3, h4, h5, hash, url)
                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
                 ON CONFLICT(url) DO NOTHING;",
             )?;
@@ -224,8 +224,8 @@ pub trait WriteableDb: GetConnectionMutable + ReadOnlyDb {
             )?;
             for (url, hash) in images {
                 debug!("Inserting the following image hash {hash:?}");
-                let [c1, c2, c3, c4, c5] = hash_samples(hash)?;
-                insert_image.execute((c1, c2, c3, c4, c5, hash, url))?;
+                let [h1, h2, h3, h4, h5] = hash_chunks(hash)?;
+                insert_image.execute((h1, h2, h3, h4, h5, hash, url))?;
                 insert_message_image.execute((url, message_id))?;
             }
         }

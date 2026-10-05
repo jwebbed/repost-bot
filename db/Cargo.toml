@@ -9,6 +9,7 @@ license = "GPL-3.0-or-later"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+base64 = "0.23"
 log = "0.4"
 chrono = "0.4"
 paste = "1.0"

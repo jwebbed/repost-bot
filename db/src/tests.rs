@@ -6,6 +6,8 @@ use crate::structs::Message;
 use crate::writeable_db::get_snowflake_creation_time;
 use crate::{ReadOnlyDb, WriteableConn, WriteableDb};
 
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use chrono::{TimeZone, Utc};
 use rusqlite::Result;
 
@@ -260,22 +262,31 @@ fn test_hash_matches() -> Result<()> {
     Ok(())
 }
 
+/// Returns `hash` with one bit flipped in each of the given bytes
+fn flip_bits(hash: &str, bytes: &[usize]) -> String {
+    let mut decoded = BASE64.decode(hash).unwrap();
+    for byte in bytes {
+        decoded[*byte] ^= 1;
+    }
+    BASE64.encode(decoded)
+}
+
 #[test]
 fn test_hash_matches_near_match() -> Result<()> {
     let mut db = setup()?;
     let original = add_msg(&db, 1_000, CHANNEL, SERVER, AUTHOR);
     db.insert_images([("https://cdn/a.png", HASH)], original.id)?;
 
-    // differs in the final sampled character (offset 14) so only 4 of the 5 match
-    let mut near = HASH.to_string();
-    near.replace_range(14..15, "#");
+    // 4 bits different, one in each of the first 4 chunks, so only the last
+    // chunk is shared. The previous character sampling missed matches like this.
+    let near = flip_bits(HASH, &[0, 7, 14, 20]);
     let matches = db.hash_matches(&near, SERVER, 0)?;
     assert_eq!(matches.len(), 1);
     assert_eq!(matches[0].1, HASH);
 
-    // differs in two sampled characters (offsets 0 and 14)
-    near.replace_range(0..1, "#");
-    assert!(db.hash_matches(&near, SERVER, 0)?.is_empty());
+    // a difference in every chunk is too far to be a match
+    let far = flip_bits(HASH, &[0, 7, 14, 20, 26]);
+    assert!(db.hash_matches(&far, SERVER, 0)?.is_empty());
     Ok(())
 }
 
